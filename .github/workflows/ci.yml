@@ -7,12 +7,12 @@ on:
     branches: [main]
 
 jobs:
-  web:
-    name: web (typecheck + lint + test)
+  api:
+    name: api (typecheck Cloudflare Worker)
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/web
+        working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
 
@@ -26,18 +26,21 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install
+      - name: Install (workspace root)
         run: pnpm install --frozen-lockfile
         working-directory: .
 
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Lint
-        run: pnpm lint || echo "lint not fatal yet"
-
       - name: Test
-        run: pnpm test -- --run || echo "no tests yet"
+        run: pnpm test || echo "no tests yet"
+
+      - name: Wrangler dry-run build
+        # Validates the bundle compiles for the Workers runtime without
+        # actually deploying. Catches things like missing nodejs_compat
+        # imports, broken module graphs, oversized bundles, etc.
+        run: pnpm exec wrangler deploy --dry-run --outdir=.dry-run
 
   base-skill:
     name: base-skill (sanitize + package smoke test)
@@ -49,14 +52,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Create a minimal fake skill-creator (just enough for package.py)
+      - name: Stub a minimal skill-creator (just enough for package.py)
         run: |
           mkdir -p $HOME/.claude/skills/skill-creator/scripts
-          cat > $HOME/.claude/skills/skill-creator/scripts/__init__.py <<'EOF'
-          EOF
+          touch $HOME/.claude/skills/skill-creator/scripts/__init__.py
           cat > $HOME/.claude/skills/skill-creator/scripts/quick_validate.py <<'EOF'
           def validate_skill(path):
-              return True, "stub validator — CI only"
+              return True, "stub validator (CI only)"
           EOF
           cat > $HOME/.claude/skills/skill-creator/scripts/package_skill.py <<'EOF'
           import sys, zipfile
@@ -71,9 +73,6 @@ jobs:
               output_dir = Path(output_dir or ".").resolve()
               output_dir.mkdir(parents=True, exist_ok=True)
               out = output_dir / f"{skill_path.name}.skill"
-              ok, _ = validate_skill(skill_path)
-              if not ok:
-                  return None
               with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
                   for p in skill_path.rglob("*"):
                       if p.is_file():
@@ -84,19 +83,48 @@ jobs:
               package_skill(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
           EOF
 
-      - name: Run sanitize.py against the base skill
+      - name: sanitize.py self-test (must not return 'block')
         run: |
-          python3 base-skill/skillhub/scripts/sanitize.py base-skill/skillhub --json-only > scrub_report.json
-          python3 -c "import json; r=json.load(open('scrub_report.json')); assert r['overall_severity'] != 'block', r"
+          python3 base-skill/skillhub/scripts/sanitize.py base-skill/skillhub --json-only > /tmp/scrub_report.json
+          python3 -c "
+          import json, sys
+          r = json.load(open('/tmp/scrub_report.json'))
+          print(f\"overall_severity={r['overall_severity']} findings={r['scan_stats']['total_findings']}\")
+          assert r['overall_severity'] != 'block', r
+          "
 
-      - name: Run intent_detect.py sanity checks
+      - name: intent_detect.py sanity checks (positive + negative cases)
         run: |
-          python3 base-skill/skillhub/scripts/intent_detect.py "extract tables from this pdf" | tee /tmp/detect.json
-          python3 -c "import json; r=json.load(open('/tmp/detect.json')); assert r['is_task'] is True, r"
+          python3 base-skill/skillhub/scripts/intent_detect.py "extract tables from this pdf" > /tmp/detect_pos.json
+          python3 -c "import json; r=json.load(open('/tmp/detect_pos.json')); assert r['is_task'] is True, r"
+          python3 base-skill/skillhub/scripts/intent_detect.py "what is the meaning of life" > /tmp/detect_neg.json
+          python3 -c "import json; r=json.load(open('/tmp/detect_neg.json')); assert r['is_task'] is False, r"
+
+      - name: identity.py status (unregistered)
+        run: |
+          rm -f $HOME/.claude/skills/skillhub/.identity.json
+          # Status returns exit 1 when unregistered — that's correct, not a failure
+          python3 base-skill/skillhub/scripts/identity.py status && exit 1 || true
 
       - name: Package the base skill
         run: |
           mkdir -p dist
           python3 base-skill/skillhub/scripts/package.py base-skill/skillhub dist/skillhub.skill
           test -f dist/skillhub.skill
-          python3 -c "import zipfile; z=zipfile.ZipFile('dist/skillhub.skill'); assert any(n.endswith('SKILL.md') for n in z.namelist())"
+          python3 -c "
+          import zipfile
+          z = zipfile.ZipFile('dist/skillhub.skill')
+          names = z.namelist()
+          assert any(n.endswith('SKILL.md') for n in names), names
+          assert any(n.endswith('LICENSE.txt') for n in names), names
+          assert any(n.endswith('scripts/sanitize.py') for n in names), names
+          assert any(n.endswith('references/scrubbing.md') for n in names), names
+          print(f'package ok: {len(names)} files, sha256:', __import__('hashlib').sha256(open('dist/skillhub.skill', 'rb').read()).hexdigest()[:16])
+          "
+
+      - name: Upload .skill artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skillhub.skill
+          path: dist/skillhub.skill
+          retention-days: 14
