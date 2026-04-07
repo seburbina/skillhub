@@ -1,14 +1,11 @@
-import { NextResponse } from "next/server";
-
-export const runtime = "nodejs";
-
 /**
  * Liveness probe. Used by the Phase 0 smoke test and by uptime checks.
- * Does NOT touch the DB intentionally — keeps the probe cheap and
- * independent of DB availability.
+ * Runs on the edge runtime for the cheapest possible cold start.
  */
+export const runtime = "edge";
+
 export function GET() {
-  return NextResponse.json({
+  return Response.json({
     status: "ok",
     now: new Date().toISOString(),
     version: "0.0.1",
