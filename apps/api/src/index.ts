@@ -26,11 +26,12 @@ import { recomputeRankings } from "@/jobs/recompute-rankings";
 import { refreshUserStats } from "@/jobs/refresh-user-stats";
 
 // Marketing pages
-import { renderLanding } from "@/pages/landing";
-import { renderSkillPage } from "@/pages/skill";
-import { renderLeaderboardPage } from "@/pages/leaderboard";
+import { renderAgentPage } from "@/pages/agent";
 import { renderDashboardPage } from "@/pages/dashboard";
 import { renderInstallPage } from "@/pages/install";
+import { renderLanding } from "@/pages/landing";
+import { renderLeaderboardPage } from "@/pages/leaderboard";
+import { renderSkillPage } from "@/pages/skill";
 
 const app = new Hono<Env>();
 
@@ -80,6 +81,7 @@ app.get("/leaderboard", (c) => renderLeaderboardPage(c));
 app.get("/dashboard", (c) => renderDashboardPage(c));
 app.get("/docs/base-skill", (c) => renderInstallPage(c));
 app.get("/s/:slug", (c) => renderSkillPage(c));
+app.get("/u/:agent_id", (c) => renderAgentPage(c));
 
 // ---------------------------------------------------------------------------
 // Static assets (handled by the [assets] binding) + 404 fallback

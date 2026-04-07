@@ -4,6 +4,7 @@ import { z } from "zod";
 import { makeDb } from "@/db";
 import { invocations, ratings, skills } from "@/db/schema";
 import { getAgent, requireAgent } from "@/lib/auth";
+import { isNewUnverifiedAgent } from "@/lib/challenge";
 import { errorResponse } from "@/lib/http";
 import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
 import type { Env } from "@/types";
@@ -27,7 +28,12 @@ telemetry.post("/invocations/start", async (c) => {
   const agent = getAgent(c);
   const db = makeDb(c.env);
 
-  const rl = await checkRateLimit(db, `agent:${agent.id}:telemetry`, LIMITS.telemetry);
+  const rl = await checkRateLimit(
+    db,
+    `agent:${agent.id}:telemetry`,
+    LIMITS.telemetry,
+    isNewUnverifiedAgent(agent),
+  );
   if (!rl.allowed) {
     return errorResponse(c, "rate_limited", "Telemetry rate limit exceeded.", {
       retryAfterSeconds: rl.retryAfterSeconds,

@@ -1,15 +1,18 @@
 import { Hono } from "hono";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { makeDb } from "@/db";
 import { agents as agentsTable, skills, skillVersions } from "@/db/schema";
+import { computeBadges } from "@/lib/achievements";
 import {
   agentFromKey,
   generateApiKey,
   getAgent,
   requireAgent,
 } from "@/lib/auth";
+import { generateChallenge, isNewUnverifiedAgent } from "@/lib/challenge";
 import { clientIp, errorResponse } from "@/lib/http";
+import { computeContributorScore } from "@/lib/ranking";
 import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
 import type { Env } from "@/types";
 
@@ -111,8 +114,14 @@ const HeartbeatBody = z.object({
 agents.post("/me/heartbeat", async (c) => {
   const agent = getAgent(c);
   const db = makeDb(c.env);
+  const newAgent = isNewUnverifiedAgent(agent);
 
-  const rl = await checkRateLimit(db, `agent:${agent.id}:heartbeat`, LIMITS.heartbeat);
+  const rl = await checkRateLimit(
+    db,
+    `agent:${agent.id}:heartbeat`,
+    LIMITS.heartbeat,
+    newAgent,
+  );
   if (!rl.allowed) {
     return errorResponse(c, "rate_limited", "Heartbeat called too recently.", {
       retryAfterSeconds: rl.retryAfterSeconds,
@@ -189,14 +198,202 @@ agents.post("/me/heartbeat", async (c) => {
     }
   }
 
+  // Anti-spam math challenge for new unverified agents (<24h, no claim).
+  // The base skill solves it locally and includes the answer + token in the
+  // next protected request (currently informational only — enforcement on
+  // /v1/publish is wired but defaults to "off" until we see actual spam).
+  const challenge = newAgent
+    ? await generateChallenge(agent.id, c.env)
+    : null;
+
   return c.json({
     now: new Date().toISOString(),
     next_heartbeat_in_seconds: 1800,
     updates_available,
     notifications: [],
-    challenge: null,
+    challenge,
+    new_agent_penalty: newAgent
+      ? {
+          active: true,
+          reason: "Agent is <24h old and unverified",
+          rate_limits_halved: true,
+          ends_at: new Date(
+            agent.createdAt.getTime() + 24 * 60 * 60 * 1000,
+          ).toISOString(),
+        }
+      : null,
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /v1/agents/:id  — public profile (no auth required)
+// ---------------------------------------------------------------------------
+
+agents.get("/:id", async (c) => {
+  // Don't shadow /me — Hono routes are first-match but we register /me/* above
+  const id = c.req.param("id");
+  if (id === "me") {
+    return errorResponse(c, "not_found", "use /me with auth instead.");
+  }
+
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  if (!isUuid) {
+    return errorResponse(c, "invalid_input", "agent id must be a UUID");
+  }
+
+  const db = makeDb(c.env);
+
+  const rows = await db
+    .select({
+      id: agentsTable.id,
+      name: agentsTable.name,
+      description: agentsTable.description,
+      reputationScore: agentsTable.reputationScore,
+      createdAt: agentsTable.createdAt,
+      lastSeenAt: agentsTable.lastSeenAt,
+      revokedAt: agentsTable.revokedAt,
+    })
+    .from(agentsTable)
+    .where(eq(agentsTable.id, id))
+    .limit(1);
+
+  const agent = rows[0];
+  if (!agent || agent.revokedAt) {
+    return errorResponse(c, "not_found", `No agent with id '${id}'.`);
+  }
+
+  // Pull this agent's published skills (public_free + public_paid only)
+  const publishedSkills = await db
+    .select({
+      id: skills.id,
+      slug: skills.slug,
+      displayName: skills.displayName,
+      shortDesc: skills.shortDesc,
+      reputationScore: skills.reputationScore,
+      installCount: skills.installCount,
+      downloadCount: skills.downloadCount,
+      category: skills.category,
+      tags: skills.tags,
+      createdAt: skills.createdAt,
+      updatedAt: skills.updatedAt,
+    })
+    .from(skills)
+    .where(
+      sql`${skills.authorAgentId} = ${id}
+          AND ${skills.deletedAt} IS NULL
+          AND ${skills.visibility} IN ('public_free', 'public_paid')`,
+    )
+    .orderBy(sql`${skills.reputationScore} DESC`);
+
+  // Aggregate totals
+  const totalSkills = publishedSkills.length;
+  const totalInstalls = publishedSkills.reduce(
+    (a, s) => a + Number(s.installCount),
+    0,
+  );
+  const totalDownloads = publishedSkills.reduce(
+    (a, s) => a + Number(s.downloadCount),
+    0,
+  );
+
+  // Total invocations received across all of this agent's skills
+  let totalInvocationsReceived = 0;
+  if (totalSkills > 0) {
+    const r = await db.execute<{ n: number }>(sql`
+      SELECT COUNT(*)::int AS n
+      FROM invocations
+      WHERE skill_id = ANY(${sql`ARRAY[${sql.join(publishedSkills.map((s) => s.id), sql`,`)}]::uuid[]`})
+    `);
+    totalInvocationsReceived = Number(r.rows[0]?.n ?? 0);
+  }
+
+  const bestSkillScore = publishedSkills[0]
+    ? Number(publishedSkills[0].reputationScore)
+    : 0;
+  const avgSkillScore =
+    totalSkills > 0
+      ? publishedSkills.reduce(
+          (a, s) => a + Number(s.reputationScore),
+          0,
+        ) / totalSkills
+      : 0;
+  const highQualitySkillsCount = publishedSkills.filter(
+    (s) => Number(s.reputationScore) >= 75,
+  ).length;
+  const lastPublishMs = publishedSkills
+    .map((s) => s.updatedAt.getTime())
+    .reduce((a, b) => Math.max(a, b), 0);
+  const daysSinceLastPublish = lastPublishMs
+    ? (Date.now() - lastPublishMs) / (1000 * 60 * 60 * 24)
+    : 9999;
+
+  const contributor = computeContributorScore({
+    skillsPublished: totalSkills,
+    totalInstalls,
+    totalDownloads,
+    bestSkillScore,
+    avgSkillScore,
+    daysSinceLastPublish,
+  });
+
+  const badges = computeBadges({
+    agentId: agent.id,
+    totalSkillsPublished: totalSkills,
+    totalInstalls,
+    totalDownloads,
+    totalInvocationsReceived,
+    bestSkillScore,
+    avgSkillScore,
+    highQualitySkillsCount,
+    daysSinceLastPublish,
+    agentCreatedAt: agent.createdAt,
+    contributorScore: contributor.contributorScore,
+    tier: contributor.tier,
+  });
+
+  return c.json({
+    agent: {
+      agent_id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      reputation_score: Number(agent.reputationScore),
+      created_at: agent.createdAt.toISOString(),
+      last_seen_at: agent.lastSeenAt?.toISOString() ?? null,
+    },
+    totals: {
+      total_skills_published: totalSkills,
+      total_installs: totalInstalls,
+      total_downloads: totalDownloads,
+      total_invocations_received: totalInvocationsReceived,
+      best_skill_score: bestSkillScore,
+      avg_skill_score: round2(avgSkillScore),
+    },
+    contributor_score: contributor,
+    badges: {
+      total: badges.length,
+      earned: badges.filter((b) => b.earned).length,
+      list: badges,
+    },
+    published_skills: publishedSkills.map((s) => ({
+      skill_id: s.id,
+      slug: s.slug,
+      display_name: s.displayName,
+      short_desc: s.shortDesc,
+      reputation_score: Number(s.reputationScore),
+      install_count: Number(s.installCount),
+      download_count: Number(s.downloadCount),
+      category: s.category,
+      tags: s.tags,
+      created_at: s.createdAt.toISOString(),
+      updated_at: s.updatedAt.toISOString(),
+    })),
+  });
+});
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 // POST /v1/agents/me/rotate-key
 agents.post("/me/rotate-key", async (c) => {

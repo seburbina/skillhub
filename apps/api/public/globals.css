@@ -212,3 +212,93 @@ pre {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── Badge grid for the agent profile page ──────────────────────────── */
+
+.badge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 16px 0 32px;
+}
+
+.badge {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.badge.locked {
+  opacity: 0.55;
+}
+
+.badge.earned {
+  border-color: var(--fg);
+}
+
+.badge-pill {
+  display: inline-block;
+  align-self: flex-start;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.badge.locked .badge-pill {
+  background: var(--line);
+  color: var(--muted);
+}
+
+.badge-tier {
+  background: #7c3aed;
+}
+
+.badge-quality {
+  background: #b45309;
+}
+
+.badge-founding {
+  background: #1f2937;
+  background-image: linear-gradient(135deg, #1f2937 0%, #4b5563 100%);
+}
+
+.badge-milestone {
+  background: var(--fg);
+}
+
+.badge.locked .badge-pill[class*="badge-tier"],
+.badge.locked .badge-pill[class*="badge-quality"],
+.badge.locked .badge-pill[class*="badge-founding"],
+.badge.locked .badge-pill[class*="badge-milestone"] {
+  background: var(--line);
+  color: var(--muted);
+  background-image: none;
+}
+
+.badge-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.badge-progress {
+  height: 4px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.badge-progress-fill {
+  height: 100%;
+  background: var(--fg);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}

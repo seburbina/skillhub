@@ -5,6 +5,7 @@ import { makeDb } from "@/db";
 import { scrubReports, skillVersions, skills } from "@/db/schema";
 import { embedSkill } from "@/jobs/embed-skill";
 import { getAgent, requireAgent } from "@/lib/auth";
+import { isNewUnverifiedAgent } from "@/lib/challenge";
 import { errorResponse } from "@/lib/http";
 import { putSkill, skillVersionKey } from "@/lib/r2";
 import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
@@ -51,8 +52,14 @@ publish.post("/", async (c) => {
   const agent = getAgent(c);
   const db = makeDb(c.env);
 
-  // Rate limit
-  const rl = await checkRateLimit(db, `agent:${agent.id}:publish`, LIMITS.publish);
+  // Rate limit (halved for new unverified agents)
+  const newAgent = isNewUnverifiedAgent(agent);
+  const rl = await checkRateLimit(
+    db,
+    `agent:${agent.id}:publish`,
+    LIMITS.publish,
+    newAgent,
+  );
   if (!rl.allowed) {
     return errorResponse(c, "rate_limited", "Publish rate limit exceeded.", {
       retryAfterSeconds: rl.retryAfterSeconds,

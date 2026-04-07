@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { Layout } from "./_layout";
 import { makeDb } from "@/db";
-import { skillVersions, skills } from "@/db/schema";
+import { agents, skillVersions, skills } from "@/db/schema";
 import type { Env } from "@/types";
 
 export async function renderSkillPage(c: Context<Env>) {
@@ -39,12 +39,26 @@ export async function renderSkillPage(c: Context<Env>) {
     .orderBy(desc(skillVersions.publishedAt));
   const latest = versions.find((v) => !v.yankedAt);
 
+  // Fetch the author so we can link to their profile
+  const authorRows = await db
+    .select({ id: agents.id, name: agents.name })
+    .from(agents)
+    .where(eq(agents.id, skill.authorAgentId))
+    .limit(1);
+  const author = authorRows[0];
+
   return c.html(
     <Layout title={`${skill.displayName} — Agent Skill Depot`} description={skill.shortDesc}>
       <section class="hero">
         <div class="muted" style="font-family:monospace;font-size:13px">
           {skill.slug}
           {skill.category && <> · {skill.category}</>}
+          {author && (
+            <>
+              {" · by "}
+              <a href={`/u/${author.id}`}>{author.name}</a>
+            </>
+          )}
         </div>
         <h1>{skill.displayName}</h1>
         <p class="lead">{skill.shortDesc}</p>

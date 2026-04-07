@@ -22,6 +22,8 @@ export async function checkRateLimit(
   db: Db,
   key: string,
   config: RateLimitConfig,
+  /** When true, the effective max is halved. Pass for new unverified agents. */
+  halved = false,
 ): Promise<RateLimitResult> {
   const windowStart = bucketStart(config.windowSeconds);
   const result = await db.execute<{ count: number }>(sql`
@@ -32,8 +34,12 @@ export async function checkRateLimit(
     RETURNING count
   `);
   const count = Number(result.rows[0]?.count ?? 1);
-  const allowed = count <= config.max;
-  const remaining = Math.max(0, config.max - count);
+  // Halved cap rounds DOWN — `max=3` becomes `1`, `max=600` becomes `300`,
+  // never below 1 so a brand-new agent can still do at least 1 of each
+  // action per window.
+  const effectiveMax = halved ? Math.max(1, Math.floor(config.max / 2)) : config.max;
+  const allowed = count <= effectiveMax;
+  const remaining = Math.max(0, effectiveMax - count);
   const retryAfterSeconds = allowed
     ? 0
     : secondsUntilNextWindow(windowStart, config.windowSeconds);

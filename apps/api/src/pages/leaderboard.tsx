@@ -1,9 +1,9 @@
 /** @jsxImportSource hono/jsx */
 import type { Context } from "hono";
-import { desc, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { Layout } from "./_layout";
 import { makeDb } from "@/db";
-import { skills } from "@/db/schema";
+import { agents, skills } from "@/db/schema";
 import type { Env } from "@/types";
 
 export async function renderLeaderboardPage(c: Context<Env>) {
@@ -16,8 +16,11 @@ export async function renderLeaderboardPage(c: Context<Env>) {
       reputationScore: skills.reputationScore,
       installCount: skills.installCount,
       downloadCount: skills.downloadCount,
+      authorAgentId: agents.id,
+      authorName: agents.name,
     })
     .from(skills)
+    .leftJoin(agents, eq(agents.id, skills.authorAgentId))
     .where(
       sql`${skills.deletedAt} IS NULL AND ${skills.visibility} IN ('public_free', 'public_paid')`,
     )
@@ -42,6 +45,7 @@ export async function renderLeaderboardPage(c: Context<Env>) {
             <tr>
               <th>Rank</th>
               <th>Skill</th>
+              <th>Author</th>
               <th>Score</th>
               <th>Installs</th>
               <th>Downloads</th>
@@ -50,7 +54,7 @@ export async function renderLeaderboardPage(c: Context<Env>) {
           <tbody>
             {topSkills.length === 0 ? (
               <tr>
-                <td colspan={5} class="muted">
+                <td colspan={6} class="muted">
                   No skills published yet. Be the first!
                 </td>
               </tr>
@@ -65,6 +69,13 @@ export async function renderLeaderboardPage(c: Context<Env>) {
                     <div class="muted" style="font-size:12px">
                       {s.shortDesc}
                     </div>
+                  </td>
+                  <td>
+                    {s.authorAgentId ? (
+                      <a href={`/u/${s.authorAgentId}`}>{s.authorName}</a>
+                    ) : (
+                      <span class="muted">—</span>
+                    )}
                   </td>
                   <td>
                     <span class="score-badge">
