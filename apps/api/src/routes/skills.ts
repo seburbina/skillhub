@@ -292,21 +292,22 @@ skills.post("/:id/report", requireAgent, async (c) => {
   const { reason, comment } = parsed.data;
 
   // Idempotency: one report per (reporter, skill, reason) per 24h
-  // (prevents reporters from spamming the same flag)
-  // admin_notes is stored as `reporter_agent:<id>` optionally followed by
-  // \n\n<comment>, so we use a LIKE prefix match.
-  const reporterPrefix = `reporter_agent:${reporterAgent.id}`;
-  const recentDup = await db.execute<{ n: number }>(sql`
-    SELECT COUNT(*)::int AS n
-    FROM moderation_flags
-    WHERE target_type = 'skill'
-      AND target_id = ${skill.id}
-      AND reporter_user_id IS NULL
-      AND admin_notes LIKE ${reporterPrefix + "%"}
-      AND reason = ${reason}
-      AND created_at > NOW() - INTERVAL '24 hours'
-  `);
-  if (Number(recentDup.rows[0]?.n ?? 0) > 0) {
+  // (prevents reporters from spamming the same flag). Backed by the
+  // moderation_flags_dedupe_idx composite index.
+  const recentDup = await db
+    .select({ id: moderationFlags.id })
+    .from(moderationFlags)
+    .where(
+      and(
+        eq(moderationFlags.targetType, "skill"),
+        eq(moderationFlags.targetId, skill.id),
+        eq(moderationFlags.reporterAgentId, reporterAgent.id),
+        eq(moderationFlags.reason, reason),
+        sql`${moderationFlags.createdAt} > NOW() - INTERVAL '24 hours'`,
+      ),
+    )
+    .limit(1);
+  if (recentDup.length > 0) {
     return errorResponse(
       c,
       "conflict",
@@ -314,32 +315,25 @@ skills.post("/:id/report", requireAgent, async (c) => {
     );
   }
 
-  // Insert the flag — since we don't have a users system yet, we put the
-  // reporter agent id in admin_notes prefixed by 'reporter_agent:' so admins
-  // can audit. Once Phase 3 wires real user auth we'll add a reporter_agent_id
-  // column to moderation_flags.
+  // Insert the flag — reporter_agent_id is the FK; admin_notes now holds
+  // only the optional free-form comment.
   await db.insert(moderationFlags).values({
     targetType: "skill",
     targetId: skill.id,
+    reporterAgentId: reporterAgent.id,
     reason,
-    adminNotes:
-      `reporter_agent:${reporterAgent.id}` +
-      (comment ? `\n\n${comment.slice(0, 800)}` : ""),
+    adminNotes: comment ? comment.slice(0, 800) : null,
   });
 
   // Auto-quarantine: count distinct reporter agents in the last 7 days.
-  // admin_notes starts with `reporter_agent:<uuid>` (optionally followed by
-  // \n\n<comment>), so we split on the first newline AND on the prefix to
-  // extract the agent id alone before counting distinct.
   const recentReports = await db.execute<{ distinct_reporters: number }>(sql`
-    SELECT COUNT(DISTINCT split_part(split_part(admin_notes, E'\\n', 1), ':', 2))::int
-      AS distinct_reporters
-    FROM moderation_flags
-    WHERE target_type = 'skill'
-      AND target_id = ${skill.id}
-      AND status = 'open'
-      AND created_at > NOW() - (${QUARANTINE_WINDOW_DAYS} || ' days')::interval
-      AND admin_notes LIKE 'reporter_agent:%'
+    SELECT COUNT(DISTINCT reporter_agent_id)::int AS distinct_reporters
+      FROM moderation_flags
+     WHERE target_type = 'skill'
+       AND target_id = ${skill.id}
+       AND status = 'open'
+       AND reporter_agent_id IS NOT NULL
+       AND created_at > NOW() - (${QUARANTINE_WINDOW_DAYS} || ' days')::interval
   `);
   const reporters = Number(recentReports.rows[0]?.distinct_reporters ?? 0);
 

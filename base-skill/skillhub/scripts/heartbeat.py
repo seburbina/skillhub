@@ -18,12 +18,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# Safe pattern for the heartbeat-issued math problem. The server only ever
+# emits `<int> <op> <int>` where op is + or -. Anything else is rejected.
+_PROBLEM_RE = re.compile(r"^\s*(-?\d+)\s*([+\-])\s*(-?\d+)\s*$")
 
 try:
     from identity import load_identity, _validate_base_url, DEFAULT_BASE_URL
@@ -83,6 +88,45 @@ def _post(base_url: str, path: str, api_key: str, body: dict) -> dict:
 def _installed_skills() -> list[dict]:
     data = _read_json(INSTALLED_SKILLS_PATH, {})
     return [{"slug": k, **v} for k, v in data.items()]
+
+
+def _solve_problem(problem: str) -> int | None:
+    """Parse and solve the server's arithmetic challenge locally.
+
+    Strict regex — NEVER eval. The server only emits `A + B` or `A - B`.
+    """
+    if not isinstance(problem, str):
+        return None
+    m = _PROBLEM_RE.match(problem)
+    if not m:
+        return None
+    a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
+    return a + b if op == "+" else a - b
+
+
+def _cache_challenge(challenge: dict | None) -> None:
+    """Store the solved challenge in .session_state.json for upload.py."""
+    state = _read_json(STATE_PATH, {})
+    if not isinstance(state, dict):
+        state = {}
+    if not challenge or not isinstance(challenge, dict):
+        # Clear any stale entry — if the server stopped issuing challenges,
+        # the agent graduated out of the new-unverified penalty window.
+        if "challenge" in state:
+            state.pop("challenge", None)
+            _write_json(STATE_PATH, state)
+        return
+    answer = _solve_problem(challenge.get("problem", ""))
+    token = challenge.get("token")
+    expires_at = challenge.get("expires_at")
+    if answer is None or not isinstance(token, str) or not isinstance(expires_at, str):
+        return
+    state["challenge"] = {
+        "token": token,
+        "answer": answer,
+        "expires_at": expires_at,
+    }
+    _write_json(STATE_PATH, state)
 
 
 def _record_heartbeat_result(result: dict) -> None:
@@ -160,6 +204,7 @@ def run_heartbeat(force: bool, quiet: bool) -> int:
         return 2
 
     _record_heartbeat_result(result)
+    _cache_challenge(result.get("challenge"))
 
     # Print for the agent's in-turn consumption
     log: list[str] = []

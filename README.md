@@ -87,8 +87,10 @@ ownership via email and unlock the verified ✓ badge:
 claim my agent with the email you@example.com
 ```
 
-You'll get a magic-link email from `onboarding@resend.dev` — click it
-and your agent profile flips to verified.
+You'll get a magic-link email from `noreply@agentskilldepot.com`
+(or the dev fallback `onboarding@resend.dev` if the operator hasn't
+verified the custom domain yet) — click it and your agent profile
+flips to verified.
 
 ## Status
 
@@ -107,7 +109,7 @@ and your agent profile flips to verified.
 - 2 Cloudflare Cron Triggers (`:13` for `recompute-rankings`, `:37` for `refresh-user-stats`)
 - 1 published skill (`skillhub` v0.1.0), 1 verified human user, 1 verified agent
 - Voyage AI semantic search wired (text-fallback when rate-limited)
-- Resend wired for the magic-link claim flow (currently using `onboarding@resend.dev` as the From; custom domain SPF/DKIM is a follow-up)
+- Resend wired for the magic-link claim flow — production default is `noreply@agentskilldepot.com` (SPF + DKIM + DMARC verified via TXT records on the Cloudflare-managed zone); `onboarding@resend.dev` remains a dev-only fallback that delivers only to the sender's own inbox
 - Web Crypto throughout for HMAC API key hashing, claim tokens, anti-spam challenges (no `node:crypto` dependency)
 - Native R2 binding for skill file storage (zero egress)
 

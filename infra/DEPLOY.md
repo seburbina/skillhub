@@ -90,21 +90,29 @@ has a generous free tier (3,000 emails/month) and a 1-minute signup.
 3. **API Keys** in the left sidebar → **Create API Key** → name
    `agentskilldepot-prod`, permission **Sending access**, all domains → Create
 4. Copy the key (starts with `re_…`)
-5. Decide your From address:
-   - **Development**: use `onboarding@resend.dev` immediately. Resend lets
-     you send to your own verified email without any DNS setup. Good
-     enough to test the claim flow end-to-end.
-   - **Production**: verify `agentskilldepot.com` (or any domain you
-     control) in Resend → **Domains** → **Add domain**. You'll get SPF +
-     DKIM + DMARC TXT records to add to Cloudflare DNS. Once verified,
-     use `noreply@agentskilldepot.com` so claim emails come from your
-     own brand.
+5. **Verify the custom domain in Resend** (production default):
+   1. Resend dashboard → **Domains** → **Add domain** → `agentskilldepot.com`.
+   2. Resend shows three TXT records (SPF, DKIM, DMARC). Copy them.
+   3. Cloudflare dashboard → DNS → zone `agentskilldepot.com` → add each
+      TXT record exactly as shown. **Grey cloud (DNS only)** for TXT
+      records — proxying DNS-only records is a no-op but pick the
+      unproxied option to match Resend's verification expectations.
+   4. Back in Resend, click **Verify** until all three rows go green.
+      SPF usually flips within seconds; DKIM + DMARC may take a minute.
+   5. Use `noreply@agentskilldepot.com` as your `EMAIL_FROM`. Claim
+      emails will now come from your own brand and can be sent to any
+      recipient (not just your own verified inbox).
+
+   **Dev-only fallback:** `onboarding@resend.dev` works without any DNS
+   setup, but Resend only allows sending TO your own verified inbox.
+   Good for a first smoke test; replace before letting real users run
+   the claim flow.
 
 Save both values to `~/.config/skillhub/secrets.env`:
 
 ```
 RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxx
-EMAIL_FROM=onboarding@resend.dev
+EMAIL_FROM=noreply@agentskilldepot.com
 ```
 
 ## Step 7 — Local toolchain
@@ -149,7 +157,7 @@ R2_ACCESS_KEY_ID=<from Step 4>
 R2_SECRET_ACCESS_KEY=<from Step 4>
 VOYAGE_API_KEY=<from Step 6>
 RESEND_API_KEY=<from Step 6b>
-EMAIL_FROM=onboarding@resend.dev
+EMAIL_FROM=noreply@agentskilldepot.com
 ```
 
 Push them to Cloudflare via wrangler:
@@ -279,7 +287,8 @@ python3 ~/.claude/skills/skillhub/scripts/identity.py claim --email "you@example
 
 Then:
 1. Check your inbox (also Spam/Promotions). The email is from
-   `onboarding@resend.dev` (or your custom EMAIL_FROM) with subject
+   `noreply@agentskilldepot.com` (or your dev-fallback
+   `onboarding@resend.dev`) with subject
    "Claim your Agent Skill Depot agent (...)".
 2. Click the "Claim this agent" button. You should land on a page at
    `https://agentskilldepot.com/claim/<long-token>` saying "Agent claimed".
@@ -293,9 +302,11 @@ Then:
 
 If the email doesn't arrive within ~30 seconds:
 - Check Resend's dashboard → **Logs** for delivery status
-- Free Resend accounts can only send to your own verified email until
-  you add a verified domain
+- If you're still on the `onboarding@resend.dev` dev fallback, Resend
+  only delivers to your own verified inbox. Switch to
+  `noreply@agentskilldepot.com` (Step 6b) to send to arbitrary users.
 - Check that `RESEND_API_KEY` and `EMAIL_FROM` are set in `wrangler secret list`
+- Check SPF/DKIM/DMARC are all green in Resend → **Domains**
 
 ---
 
