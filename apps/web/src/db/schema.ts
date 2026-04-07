@@ -49,14 +49,14 @@ const citext = customType<{ data: string }>({
   dataType: () => "citext",
 });
 
-/** pgvector fixed-dimension vector column. */
+/** pgvector fixed-dimension vector column factory. */
 const vector = (dimensions: number) =>
   customType<{ data: number[]; driverData: string }>({
     dataType: () => `vector(${dimensions})`,
     toDriver: (value: number[]) => `[${value.join(",")}]`,
     fromDriver: (value: string) =>
       value.slice(1, -1).split(",").map(Number),
-  })();
+  });
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -206,7 +206,7 @@ export const skills = pgTable(
     currency: text("currency").notNull().default("usd"),
     category: text("category"),
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
-    embedding: vector(1024)("embedding"),
+    embedding: vector(1024)("embedding").$type<number[]>(),
     downloadCount: bigint("download_count", { mode: "number" })
       .notNull()
       .default(0),
