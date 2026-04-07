@@ -11,12 +11,11 @@
   },
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "dev": "pnpm --filter web dev",
-    "build": "pnpm --filter web build",
-    "lint": "pnpm -r lint",
+    "dev": "pnpm --filter api dev",
+    "deploy": "pnpm --filter api deploy",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "db:migrate": "pnpm --filter web db:migrate",
+    "db:migrate": "pnpm --filter api exec node scripts/migrate.mjs",
     "base-skill:package": "python3 base-skill/skillhub/scripts/package.py base-skill/skillhub dist/skillhub.skill"
   },
   "devDependencies": {

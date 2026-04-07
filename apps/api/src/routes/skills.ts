@@ -1,0 +1,298 @@
+import { Hono } from "hono";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
+import { makeDb } from "@/db";
+import { skillVersions, skills as skillsTable } from "@/db/schema";
+import { requireAgent, getAgent } from "@/lib/auth";
+import { embed, toVectorLiteral } from "@/lib/embeddings";
+import { clientIp, errorResponse } from "@/lib/http";
+import { signedDownloadUrl } from "@/lib/r2";
+import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import type { Env } from "@/types";
+
+export const skills = new Hono<Env>();
+
+// ---------------------------------------------------------------------------
+// GET /v1/skills/search
+// ---------------------------------------------------------------------------
+
+const SearchQuery = z.object({
+  q: z.string().min(1).max(500),
+  category: z.string().max(64).optional(),
+  sort: z.enum(["rank", "new", "installs", "trending"]).default("rank"),
+  limit: z.coerce.number().int().min(1).max(50).default(5),
+});
+
+skills.get("/search", async (c) => {
+  const ip = clientIp(c);
+  const db = makeDb(c.env);
+
+  const rl = await checkRateLimit(db, `ip:${ip}:search`, LIMITS.search);
+  if (!rl.allowed) {
+    return errorResponse(c, "rate_limited", "Search rate limit exceeded.", {
+      retryAfterSeconds: rl.retryAfterSeconds,
+    });
+  }
+
+  const parsed = SearchQuery.safeParse({
+    q: c.req.query("q"),
+    category: c.req.query("category"),
+    sort: c.req.query("sort"),
+    limit: c.req.query("limit"),
+  });
+  if (!parsed.success) {
+    return errorResponse(c, "invalid_input", "Invalid search query.", {
+      details: parsed.error.issues,
+    });
+  }
+  const { q, category, sort, limit } = parsed.data;
+
+  let queryEmbedding: number[] | null = null;
+  try {
+    queryEmbedding = await embed(q, "query", c.env);
+  } catch (e) {
+    console.warn("[search] embedding failed, falling back to text:", e);
+  }
+
+  const limitClause = Math.max(1, Math.min(50, limit));
+  const categoryFilter = category ? sql` AND category = ${category}` : sql``;
+
+  const orderBy = queryEmbedding
+    ? sql`embedding <=> ${toVectorLiteral(queryEmbedding)}::vector`
+    : sort === "new"
+      ? sql`created_at DESC`
+      : sort === "installs"
+        ? sql`install_count DESC`
+        : sql`reputation_score DESC`;
+
+  const result = await db.execute<{
+    id: string;
+    slug: string;
+    display_name: string;
+    short_desc: string;
+    reputation_score: string;
+    install_count: number;
+    download_count: number;
+    updated_at: string;
+    category: string | null;
+    tags: string[];
+  }>(sql`
+    SELECT id, slug, display_name, short_desc, reputation_score,
+           install_count, download_count, updated_at, category, tags
+    FROM skills
+    WHERE deleted_at IS NULL
+      AND visibility IN ('public_free', 'public_paid')
+      ${categoryFilter}
+      ${queryEmbedding ? sql`` : sql` AND (display_name ILIKE ${`%${q}%`} OR short_desc ILIKE ${`%${q}%`})`}
+    ORDER BY ${orderBy}
+    LIMIT ${limitClause}
+  `);
+
+  return c.json({
+    results: result.rows.map((r) => ({
+      skill_id: r.id,
+      slug: r.slug,
+      display_name: r.display_name,
+      short_desc: r.short_desc,
+      reputation_score: Number(r.reputation_score),
+      install_count: Number(r.install_count),
+      download_count: Number(r.download_count),
+      last_updated: r.updated_at,
+      category: r.category,
+      tags: r.tags,
+    })),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /v1/skills/suggest
+// ---------------------------------------------------------------------------
+
+const SuggestBody = z.object({
+  intent: z.string().min(1).max(500),
+  context_hint: z.string().max(200).optional(),
+  limit: z.number().int().min(1).max(10).default(3),
+});
+
+skills.post("/suggest", async (c) => {
+  const ip = clientIp(c);
+  const db = makeDb(c.env);
+
+  const rl = await checkRateLimit(db, `ip:${ip}:search`, LIMITS.search);
+  if (!rl.allowed) {
+    return errorResponse(c, "rate_limited", "Search rate limit exceeded.", {
+      retryAfterSeconds: rl.retryAfterSeconds,
+    });
+  }
+
+  const parsed = SuggestBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return errorResponse(c, "invalid_input", "Invalid suggest body.", {
+      details: parsed.error.issues,
+    });
+  }
+  const { intent, context_hint, limit } = parsed.data;
+  const embedInput = context_hint ? `${intent} (${context_hint})` : intent;
+
+  let queryEmbedding: number[] | null = null;
+  try {
+    queryEmbedding = await embed(embedInput, "query", c.env);
+  } catch (e) {
+    console.warn("[suggest] embedding failed:", e);
+  }
+
+  const orderBy = queryEmbedding
+    ? sql`embedding <=> ${toVectorLiteral(queryEmbedding)}::vector`
+    : sql`reputation_score DESC`;
+
+  const result = await db.execute<{
+    id: string;
+    slug: string;
+    display_name: string;
+    short_desc: string;
+    reputation_score: string;
+    install_count: number;
+    updated_at: string;
+  }>(sql`
+    SELECT id, slug, display_name, short_desc, reputation_score,
+           install_count, updated_at
+    FROM skills
+    WHERE deleted_at IS NULL
+      AND visibility IN ('public_free', 'public_paid')
+      ${queryEmbedding ? sql`` : sql` AND (display_name ILIKE ${`%${intent}%`} OR short_desc ILIKE ${`%${intent}%`})`}
+    ORDER BY ${orderBy}
+    LIMIT ${limit}
+  `);
+
+  return c.json({
+    results: result.rows.map((r) => ({
+      skill_id: r.id,
+      slug: r.slug,
+      display_name: r.display_name,
+      short_desc: r.short_desc,
+      reputation_score: Number(r.reputation_score),
+      install_count: Number(r.install_count),
+      last_updated: r.updated_at,
+    })),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /v1/skills/:slug
+// ---------------------------------------------------------------------------
+
+skills.get("/:slug", async (c) => {
+  // Hono matches /:slug too eagerly — exclude `search` and `suggest`
+  const slug = c.req.param("slug");
+  if (slug === "search" || slug === "suggest") {
+    return errorResponse(c, "not_found", `No route for ${slug}.`);
+  }
+
+  const db = makeDb(c.env);
+
+  const rows = await db
+    .select()
+    .from(skillsTable)
+    .where(and(eq(skillsTable.slug, slug), isNull(skillsTable.deletedAt)))
+    .limit(1);
+  const skill = rows[0];
+  if (!skill) {
+    return errorResponse(c, "not_found", `No skill with slug '${slug}'.`);
+  }
+
+  const versions = await db
+    .select({
+      id: skillVersions.id,
+      semver: skillVersions.semver,
+      publishedAt: skillVersions.publishedAt,
+      deprecatedAt: skillVersions.deprecatedAt,
+      yankedAt: skillVersions.yankedAt,
+      sizeBytes: skillVersions.sizeBytes,
+      changelogMd: skillVersions.changelogMd,
+    })
+    .from(skillVersions)
+    .where(eq(skillVersions.skillId, skill.id))
+    .orderBy(desc(skillVersions.publishedAt));
+
+  const latest = versions.find((v) => !v.yankedAt && !v.deprecatedAt);
+
+  return c.json({
+    skill_id: skill.id,
+    slug: skill.slug,
+    display_name: skill.displayName,
+    short_desc: skill.shortDesc,
+    long_desc_md: skill.longDescMd,
+    visibility: skill.visibility,
+    category: skill.category,
+    tags: skill.tags,
+    reputation_score: Number(skill.reputationScore),
+    install_count: Number(skill.installCount),
+    download_count: Number(skill.downloadCount),
+    license_spdx: skill.licenseSpdx,
+    created_at: skill.createdAt.toISOString(),
+    updated_at: skill.updatedAt.toISOString(),
+    latest_version: latest?.semver ?? null,
+    current_version: latest?.semver ?? null,
+    versions: versions.map((v) => ({
+      version_id: v.id,
+      semver: v.semver,
+      published_at: v.publishedAt.toISOString(),
+      deprecated_at: v.deprecatedAt?.toISOString() ?? null,
+      yanked_at: v.yankedAt?.toISOString() ?? null,
+      size_bytes: v.sizeBytes,
+      changelog_md: v.changelogMd,
+    })),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /v1/skills/:id/versions/:semver/download  (auth required)
+// ---------------------------------------------------------------------------
+
+skills.get("/:id/versions/:semver/download", requireAgent, async (c) => {
+  const agent = getAgent(c);
+  const db = makeDb(c.env);
+
+  const rl = await checkRateLimit(db, `agent:${agent.id}:download`, LIMITS.download);
+  if (!rl.allowed) {
+    return errorResponse(c, "rate_limited", "Download rate limit exceeded.", {
+      retryAfterSeconds: rl.retryAfterSeconds,
+    });
+  }
+
+  const id = c.req.param("id")!;
+  const semver = c.req.param("semver")!;
+
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const whereSkill = isUuid ? eq(skillsTable.id, id) : eq(skillsTable.slug, id);
+
+  const skillRows = await db.select().from(skillsTable).where(whereSkill).limit(1);
+  const skill = skillRows[0];
+  if (!skill) {
+    return errorResponse(c, "not_found", `No skill with identifier '${id}'.`);
+  }
+
+  const versionRows = await db
+    .select()
+    .from(skillVersions)
+    .where(
+      and(eq(skillVersions.skillId, skill.id), eq(skillVersions.semver, semver)),
+    )
+    .limit(1);
+  const version = versionRows[0];
+  if (!version) {
+    return errorResponse(c, "not_found", `No version ${semver} for ${skill.slug}.`);
+  }
+  if (version.yankedAt) {
+    return errorResponse(c, "forbidden", `Version ${semver} has been yanked.`);
+  }
+
+  await db
+    .update(skillsTable)
+    .set({ downloadCount: sql`${skillsTable.downloadCount} + 1` })
+    .where(eq(skillsTable.id, skill.id));
+
+  const url = await signedDownloadUrl(c.env, version.r2Key);
+  return c.redirect(url, 302);
+});

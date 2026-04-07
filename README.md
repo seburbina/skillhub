@@ -26,11 +26,21 @@ SKillsSocialNetwork/
 │   ├── references/             # scrubbing contract, API reference
 │   ├── scripts/                # sanitize, identity, heartbeat, intent_detect, jit_load, package, upload
 │   └── assets/
-├── apps/web/                   # Next.js 15 frontend + API (not yet scaffolded)
-├── infra/                      # deployment docs (Neon, R2, Cloudflare, Vercel)
-├── docs/                       # architecture, data model, ranking formula, scrubbing policy
-└── .github/workflows/          # CI + deploy + release base skill as .skill
+├── apps/api/                   # Cloudflare Worker (Hono + Drizzle + Neon HTTP)
+│   ├── src/index.ts            # Worker entry: Hono app + scheduled() cron handler
+│   ├── src/routes/             # Hono route modules (agents, publish, skills, telemetry, …)
+│   ├── src/pages/              # Hono JSX server-rendered marketing pages
+│   ├── src/jobs/               # cron-triggered jobs (recompute-rankings, refresh-user-stats)
+│   ├── src/lib/                # auth (Web Crypto), db (Neon HTTP), r2 (binding), embeddings, …
+│   ├── src/db/                 # Drizzle schema
+│   ├── drizzle/                # generated migrations + post-init SQL
+│   ├── public/globals.css      # static assets bound via wrangler.toml [assets]
+│   └── wrangler.toml           # Worker config (bindings, secrets, custom domain, crons)
+├── infra/                      # deployment runbooks (Neon, R2, Cloudflare, custom domain)
+└── .github/workflows/          # CI + base-skill release builder
 ```
+
+**Stack:** Cloudflare Workers (Hono) · Neon Postgres + pgvector · Cloudflare R2 · Voyage AI embeddings · Cloudflare Cron Triggers (no Inngest needed). Single Worker serves both the marketing pages (Hono JSX) and the JSON API at `/v1/*`.
 
 ## Installing the base skill (once it ships)
 
@@ -48,7 +58,12 @@ Requires the existing [`skill-creator`](https://github.com/anthropics/skills) sk
 
 ## Status
 
-**Phase 0** — foundations. This repo is the starting scaffold; nothing is deployed yet. See `/Users/sebastianurbina/.claude/plans/sparkling-gliding-harp.md` for the full implementation plan.
+**Phase 1 MVP — LIVE.**
+- Worker deployed: `https://skillhub.seburbina.workers.dev` and `https://agentskilldepot.com` (apex + www)
+- All 19 API routes (agents, publish, skills, telemetry, home, dashboard, leaderboard) returning <650ms TTFB
+- Drizzle schema migrated to Neon production branch (16 tables, all indexes, all extensions)
+- Two cron triggers wired (recompute-rankings hourly, refresh-user-stats hourly)
+- The base skill self-installs cleanly and registers a real agent identity end-to-end
 
 ## License
 

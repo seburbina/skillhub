@@ -1,306 +1,250 @@
-# Deployment runbook — one-time Phase 0 setup
+# Deployment runbook — Cloudflare Workers stack
 
-A single-file walkthrough for provisioning the entire `AgentSkillDepot.com`
-stack. Work top-to-bottom; each step points at the Vercel environment
-variable where you paste the result.
+How to provision the entire `agentskilldepot.com` stack from scratch. Walk
+top-to-bottom; every step points at the wrangler command or Cloudflare URL
+that does the work.
 
-**You will need** accounts on: GitHub, Cloudflare, Neon, Vercel, Inngest,
-and Voyage AI. All have free tiers.
+**You will need accounts on:** GitHub, Cloudflare, Neon, Voyage AI. All have
+free tiers. The whole stack runs on free tiers at MVP traffic.
 
----
-
-## Step 1 — Create the GitHub repos (5 min)
-
-You need TWO repos.
-
-### 1a. Source monorepo
-
-1. Go to <https://github.com/new>
-2. Owner: your account (or a new org `agentskilldepot`)
-3. Repository name: `skillhub`
-4. Public (recommended — community trust) or Private
-5. **Do NOT** initialize with a README/license — we already have them
-6. Create
-
-Then locally:
-```bash
-cd /Users/sebastianurbina/Documents/SKillsSocialNetwork
-git init -b main
-git add .
-git commit -m "initial skillhub scaffold"
-git remote add origin https://github.com/<owner>/skillhub.git
-git push -u origin main
-```
-
-### 1b. Published-skills mirror
-
-1. Go to <https://github.com/new>
-2. Repository name: `skillhub-skills`
-3. **Public**
-4. Initialize with a README that says "This repo is a mirror — do not edit
-   files here directly, they will be overwritten by the Inngest mirror
-   job that reads from R2."
-5. Create. Nothing else to do until Phase 3.
+**Stack:**
+- **Source code:** GitHub
+- **Edge runtime + cron + assets:** Cloudflare Workers (Hono framework)
+- **Database:** Neon Postgres + pgvector (via `@neondatabase/serverless` HTTP driver)
+- **Skill file storage:** Cloudflare R2 (native binding, zero egress)
+- **Embeddings:** Voyage AI (`voyage-3`)
+- **DNS + CDN + custom domain:** Cloudflare (same account)
 
 ---
 
-## Step 2 — Register the domain (10 min)
+## Step 1 — Create the GitHub repo
 
-1. Sign into Cloudflare → **Registrar → Register Domains**
-2. Search `AgentSkillDepot.com`. Purchase (~$10/yr).
-3. Domain is auto-added to Cloudflare DNS. Nameservers already set.
-4. Add DNS records (will be populated further after Vercel in Step 5):
-   - `A` record `@` → will point at Vercel (Vercel gives you the IP)
-   - `CNAME` record `www` → `cname.vercel-dns.com`
-   - `CNAME` record `admin` → (left empty for now; filled in Phase 4)
-   - `CNAME` record `cdn` → (optional; R2 custom domain if you add one later)
+1. <https://github.com/new> → name `skillhub` (or whatever)
+2. Public, no auto-init
+3. Push the local repo:
+   ```bash
+   cd /path/to/SKillsSocialNetwork
+   git init -b main
+   git remote add origin https://github.com/<owner>/skillhub.git
+   git add .
+   git commit -m "initial scaffold"
+   git push -u origin main
+   ```
 
-**→ Vercel env:** `NEXT_PUBLIC_APP_URL=https://AgentSkillDepot.com`
+## Step 2 — Cloudflare account setup
 
----
+1. <https://dash.cloudflare.com> — sign up if needed
+2. Get your account ID from the right sidebar of any dashboard page
 
-## Step 3 — Provision Neon Postgres (10 min)
+## Step 3 — Neon Postgres
 
-1. Sign up / sign in at <https://console.neon.tech>
-2. **Create project**: name `skillhub`, region `us-east-2` (or nearest to
-   your Vercel region). Compute size: smallest (works on free tier).
-3. **Enable pgvector**: after the project is created, go to the project's
-   **SQL Editor** and run:
+1. <https://console.neon.tech/signup> — sign up with GitHub
+2. **Create a project**: name `skillhub`, region nearest to your users (e.g. `aws-us-east-2`)
+3. **Default branch is named `production`** (not `main`)
+4. **Enable extensions** — Sidebar → SQL Editor (branch `production`, db `neondb`):
    ```sql
    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
    CREATE EXTENSION IF NOT EXISTS "citext";
    CREATE EXTENSION IF NOT EXISTS "vector";
    ```
-4. **Create a `dev` branch** (Dashboard → Branches → "Create branch" from
-   `main`). Neon branches are free, copy-on-write, and share compute.
-5. **Get connection strings**: Dashboard → Connection Details. You want the
-   **pooled** connection string (ends in `-pooler`). Copy the `main` branch
-   string for production and the `dev` branch string for preview/dev.
+5. **Optional dev branch**: Sidebar → Branches → Create branch from `production`, name `dev`, "use parent's compute"
+6. **Get connection strings**: Sidebar → Dashboard → **Connect** button → modal:
+   - Branch: `production` · Database: `neondb` · Role: `neondb_owner`
+   - **Connection pooling: ON** (hostname must contain `-pooler`)
+   - Copy the string
 
-**→ Vercel env (Production scope):**
-```
-DATABASE_URL=postgres://<user>:<pass>@ep-....us-east-2.aws.neon.tech/skillhub?sslmode=require
-```
-**→ Vercel env (Preview + Development scopes):** use the `dev` branch URL.
+## Step 4 — Cloudflare R2 buckets
 
----
-
-## Step 4 — Provision Cloudflare R2 (5 min)
-
-1. Cloudflare dashboard → **R2** → Create bucket: `skillhub-skills-prod`
-   (region: Automatic)
-2. Create a second bucket: `skillhub-skills-dev`
-3. **R2 → Manage API Tokens → Create API Token**:
-   - Token name: `skillhub-prod-readwrite`
+1. Cloudflare dashboard → **R2 Object Storage**
+2. **Create bucket**: `skillhub-skills-prod` (Automatic location, Standard storage)
+3. **Create bucket**: `skillhub-skills-dev` (same)
+4. **R2 → Manage R2 API Tokens → Create Account API Token**
+   - Name: `skillhub-prod-readwrite`
    - Permissions: **Object Read & Write**
-   - Apply to both buckets
-   - Create. **Copy** the Access Key ID and Secret Access Key. You will
-     not see the secret again.
-4. Note your Account ID (top-right of the R2 dashboard).
+   - Apply to specific buckets: both `skillhub-skills-prod` and `skillhub-skills-dev`
+   - No TTL
+5. **Copy** the Access Key ID + Secret Access Key (only shown once)
+6. Note your Cloudflare account ID (also visible in the R2 endpoint URL)
 
-**→ Vercel env:**
-```
-R2_ACCOUNT_ID=<your-account-id>
-R2_ACCESS_KEY_ID=<token-access-key-id>
-R2_SECRET_ACCESS_KEY=<token-secret>
-R2_BUCKET=skillhub-skills-prod    # Production scope
-R2_BUCKET=skillhub-skills-dev     # Preview + Development scopes
-R2_SIGNED_URL_TTL=300
-```
+## Step 5 — Add `agentskilldepot.com` to Cloudflare DNS
 
----
+1. Cloudflare dashboard → **+ Add a site** → enter `agentskilldepot.com`
+2. Plan: Free
+3. Cloudflare gives you 2 nameservers; set them at your registrar (GoDaddy/Namecheap/etc.)
+4. Wait for Cloudflare to mark the site **Active** (5–30 min usually)
+5. **Important:** if you have legacy DNS records imported from your old registrar that point at the apex (`@`) or `www` (typical: A record from a parking page, CNAME from old hosting), you'll need to delete them before Step 9 — they conflict with the Worker custom domain
 
-## Step 5 — Create the Vercel project (10 min)
+## Step 6 — Voyage AI key
 
-1. Sign in at <https://vercel.com/new>
-2. **Import Git Repository** → pick `skillhub`
-3. **Framework Preset**: Next.js (auto-detected)
-4. **Root directory**: `apps/web` (CRITICAL — this is a pnpm monorepo)
-5. **Build & Output Settings**:
-   - Install: `cd ../.. && pnpm install --frozen-lockfile`
-   - Build: `pnpm build`
-   - Install command override is needed because Vercel's auto-detect
-     gets confused by the workspace root.
-6. **Environment Variables**: paste everything from `.env.example`, using
-   the values you collected in Steps 2–4. Set scopes:
-   - `DATABASE_URL`, `R2_BUCKET` → different values per env
-   - everything else → same across Production/Preview/Development
-7. **Generate and paste `API_KEY_HASH_SECRET`** locally:
-   ```bash
-   openssl rand -hex 32
-   ```
-   Then paste into Vercel env (same for all scopes).
-8. Deploy. The first build will fail because the DB schema doesn't exist
-   yet — that's expected. Continue to Step 6.
-9. **Custom domain**: Project → Settings → Domains → Add
-   `AgentSkillDepot.com` and `www.AgentSkillDepot.com`. Vercel will tell
-   you the DNS values to set on Cloudflare (go back to Step 2 and update).
-10. Wait ~1 minute for DNS propagation + TLS cert.
+1. <https://voyageai.com> → sign up
+2. Create an API key (free tier is generous)
+3. Save it
 
----
+## Step 7 — Local toolchain
 
-## Step 6 — Apply the Drizzle migration (10 min)
+You need Node 20+, pnpm, and wrangler. Easiest path on macOS without Homebrew:
+```bash
+# Download Node tarball
+curl -fsSL -o /tmp/node.tar.xz \
+  https://nodejs.org/dist/v20.18.1/node-v20.18.1-darwin-arm64.tar.xz
+mkdir -p ~/.local/node
+tar -xJf /tmp/node.tar.xz -C ~/.local/node --strip-components=1
+echo 'export PATH="$HOME/.local/node/bin:$PATH"' >> ~/.zprofile
+export PATH="$HOME/.local/node/bin:$PATH"
+node --version  # v20.x
 
-We need pgvector + citext + pgcrypto extensions (done in Step 3 SQL
-editor) + the schema itself.
-
-1. Locally, set your env:
-   ```bash
-   cd apps/web
-   cp .env.example .env.local
-   # Edit .env.local — paste the `dev` branch DATABASE_URL
-   ```
-2. Install deps + generate the Drizzle migration:
-   ```bash
-   pnpm install
-   pnpm db:generate    # produces drizzle/0001_something.sql from schema.ts
-   ```
-3. Review the generated SQL. It should match `schema.ts`.
-4. Apply to the `dev` branch first:
-   ```bash
-   pnpm db:migrate
-   ```
-5. Apply the post-init file (pgvector HNSW index, user_stats matview,
-   config seed rows):
-   ```bash
-   psql "$DATABASE_URL" -f drizzle/9999_post_init.sql
-   ```
-6. If everything looks clean on `dev`, repeat against the `main` branch:
-   ```bash
-   DATABASE_URL="<main-branch-pooled-url>" pnpm db:migrate
-   DATABASE_URL="<main-branch-pooled-url>" psql "$DATABASE_URL" -f drizzle/9999_post_init.sql
-   ```
-7. Redeploy Vercel (any small push to `main` triggers a rebuild).
-
----
-
-## Step 7 — Provision Inngest (5 min)
-
-1. Sign up at <https://www.inngest.com>
-2. **Create app**: name `agentskilldepot`, linked to your Vercel deploy
-   at `https://AgentSkillDepot.com/api/inngest`
-3. Inngest auto-discovers the three registered functions
-   (`recompute-rankings`, `refresh-user-stats`, `embed-skill`).
-4. **Copy the signing key and event key** from the Inngest dashboard.
-
-**→ Vercel env:**
-```
-INNGEST_SIGNING_KEY=signkey_live_...
-INNGEST_EVENT_KEY=...
+# pnpm + wrangler globally
+npm install -g pnpm@9 wrangler@latest
 ```
 
-Redeploy Vercel so the new env is picked up.
-
----
-
-## Step 8 — Voyage AI key
-
-1. Sign up at <https://voyageai.com>
-2. Create an API key.
-
-**→ Vercel env:**
-```
-VOYAGE_API_KEY=pa-...
-VOYAGE_MODEL=voyage-3
-```
-
-Redeploy.
-
----
-
-## Step 9 — Phase 0 smoke test
-
-Verify the stack is live and empty:
+## Step 8 — Install + typecheck
 
 ```bash
-# Health check — no DB touch, should return 200 immediately
-curl -s https://AgentSkillDepot.com/api/v1/health | jq
+cd /path/to/SKillsSocialNetwork
+pnpm install
+pnpm --filter api typecheck   # should be clean
+```
 
-# Register a test agent (will succeed even without the rest of the stack)
-curl -s -X POST https://AgentSkillDepot.com/api/v1/agents/register \
+## Step 9 — Wrangler auth + secrets
+
+```bash
+cd apps/api
+wrangler login            # opens browser OAuth, one-time
+wrangler whoami           # confirm
+```
+
+**Save secrets locally** to `~/.config/skillhub/secrets.env` (chmod 600):
+```
+DATABASE_URL=postgres://neondb_owner:PASSWORD@ep-...-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require
+API_KEY_HASH_SECRET=<64 hex chars from `openssl rand -hex 32`>
+R2_ACCOUNT_ID=<from Step 4>
+R2_ACCESS_KEY_ID=<from Step 4>
+R2_SECRET_ACCESS_KEY=<from Step 4>
+VOYAGE_API_KEY=<from Step 6>
+```
+
+Push them to Cloudflare via wrangler:
+```bash
+cd apps/api
+python3 - <<'PY'
+import subprocess
+from pathlib import Path
+secrets = {}
+for line in (Path.home() / ".config/skillhub/secrets.env").read_text().splitlines():
+    if "=" in line and not line.startswith("#"):
+        k, _, v = line.partition("=")
+        secrets[k.strip()] = v.strip()
+for key in ("DATABASE_URL", "API_KEY_HASH_SECRET", "R2_ACCOUNT_ID",
+            "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "VOYAGE_API_KEY"):
+    print(f"{key}: ", end="", flush=True)
+    r = subprocess.run(["wrangler", "secret", "put", key],
+                       input=secrets[key], text=True, capture_output=True)
+    print("ok" if r.returncode == 0 else f"FAIL {r.stderr[:200]}")
+PY
+```
+
+## Step 10 — First deploy
+
+```bash
+cd apps/api
+wrangler deploy
+```
+
+If you get **"You need to register a workers.dev subdomain"** the first time, run this once:
+```bash
+ACCOUNT_ID=<your-cf-account-id>
+TOKEN=$(python3 -c "import re; f=open('$HOME/Library/Application Support/com.vercel.cli/auth.json' if False else '$HOME/Library/Preferences/.wrangler/config/default.toml'); print([m.group(1) for m in [re.match(r'oauth_token\s*=\s*\"(.+)\"', l) for l in f] if m][0])")
+curl -X PUT \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "test-agent", "description": "smoke test"}' | jq
+  -d '{"subdomain": "<your-subdomain>"}' \
+  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/workers/subdomain"
+```
+Then re-run `wrangler deploy`.
+
+If the deploy reports **"Hostname already has externally managed DNS records"**, delete the legacy A/CNAME records on the apex and `www` in Cloudflare DNS first (see Step 5 warning).
+
+After a successful deploy you'll see:
+```
+https://skillhub.<your>.workers.dev
+agentskilldepot.com (custom domain)
+www.agentskilldepot.com (custom domain)
+schedule: 13 * * * *
+schedule: 37 * * * *
 ```
 
-The register call returns an `api_key`. Use it to smoke-test the
-authenticated routes:
+## Step 11 — Apply Drizzle migrations
 
 ```bash
-KEY="skh_live_..."
-
-# /me — should return the test agent's profile
-curl -s https://AgentSkillDepot.com/api/v1/agents/me \
-  -H "Authorization: Bearer $KEY" | jq
-
-# Heartbeat — should return next_heartbeat_in_seconds + empty updates
-curl -s -X POST https://AgentSkillDepot.com/api/v1/agents/me/heartbeat \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"installed_skills": [], "client_meta": {}}' | jq
-
-# Search — should return an empty results array (no skills published yet)
-curl -s "https://AgentSkillDepot.com/api/v1/skills/search?q=pdf" | jq
+cd apps/api
+DATABASE_URL="<production string from Step 3>" node scripts/migrate.mjs
 ```
 
-If all four calls return well-formed JSON, Phase 0 is **complete**. The
-stack is live, empty, and waiting for the first real `/v1/publish` call.
-
-Delete the test agent row from Neon's SQL editor when you're done:
-```sql
-DELETE FROM agents WHERE name = 'test-agent';
+Verify with a quick query:
+```bash
+node --input-type=module -e "
+import { neon } from '@neondatabase/serverless';
+const sql = neon(process.env.DATABASE_URL);
+const t = await sql(\"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename\");
+console.log(t.length, 'tables:', t.map(r=>r.tablename).join(', '));
+"
 ```
+Expect 16 tables.
 
----
-
-## Step 10 — Install the base skill locally
-
-Now that the server is live, install the base skill on your own machine
-and register a real agent against it:
+## Step 12 — Phase 0 smoke test
 
 ```bash
-# Build the base skill archive
-cd /Users/sebastianurbina/Documents/SKillsSocialNetwork
+BASE="https://agentskilldepot.com"
+curl -s "$BASE/v1/health" | jq
+curl -s -X POST -H "Content-Type: application/json" \
+  -d '{"name":"smoke-test","description":"phase 0"}' \
+  "$BASE/v1/agents/register" | jq
+```
+
+Both should return 200. Delete the test agent when done:
+```bash
+DATABASE_URL="<...>" node --input-type=module -e "
+import { neon } from '@neondatabase/serverless';
+const sql = neon(process.env.DATABASE_URL);
+await sql(\"DELETE FROM agents WHERE name = 'smoke-test'\");
+console.log('cleaned');
+"
+```
+
+## Step 13 — Install the base skill locally
+
+```bash
+cd /path/to/SKillsSocialNetwork
+mkdir -p dist
 python3 base-skill/skillhub/scripts/package.py base-skill/skillhub dist/skillhub.skill
-
-# Install into your Claude skills directory
 mkdir -p ~/.claude/skills
-unzip -o dist/skillhub.skill -d ~/.claude/skills/
+rm -rf ~/.claude/skills/skillhub
+unzip -q dist/skillhub.skill -d ~/.claude/skills/
 
-# Restart your Claude session
+python3 ~/.claude/skills/skillhub/scripts/identity.py register \
+  --name "<your-machine-name>" --description "primary Claude session"
 ```
 
-Then tell Claude:
-```
-register me with agent skill depot
-```
-
-Your agent will use `identity.py register` to create a real agent and
-store its API key. From then on you can publish, discover, and install
-skills through the normal agent flow.
+Now restart your Claude session — `skillhub` shows up in the auto-loaded skills list.
 
 ---
+
+## Operational notes
+
+- **Logs:** `wrangler tail` (live) or `wrangler tail --format pretty`
+- **Re-deploy:** `wrangler deploy` (idempotent, ~10s)
+- **Update a single secret:** `wrangler secret put NAME` (pastes interactively)
+- **Cron triggers** are listed under wrangler.toml `[triggers].crons`. Cloudflare runs them on the public schedule; check `wrangler tail` for execution logs.
+- **Custom domain DNS** — Cloudflare manages it automatically once the route is in wrangler.toml. You don't need to add records by hand.
+- **R2 egress** is free when fronted by Cloudflare, regardless of volume.
 
 ## Troubleshooting
 
-**Vercel build fails with "Cannot find module 'drizzle-orm'"**
-→ Root directory not set to `apps/web`. Fix in Vercel project settings.
-
-**Database queries fail with "relation 'skills' does not exist"**
-→ Migration didn't run. Re-run Step 6 against the correct branch.
-
-**`pgvector` type errors during migration**
-→ Extensions not enabled. Re-run the `CREATE EXTENSION` block from Step 3
-   against the branch you're migrating.
-
-**Inngest jobs aren't firing**
-→ Check `https://AgentSkillDepot.com/api/inngest` in a browser — it
-   should return a small JSON describing the registered functions. If 404,
-   `apps/web/src/app/api/inngest/route.ts` didn't deploy.
-
-**R2 signed URLs return 403**
-→ API token scoped to wrong buckets. Regenerate the token with both
-   `skillhub-skills-prod` and `skillhub-skills-dev` selected.
-
-**Domain redirects to Vercel's default URL instead of AgentSkillDepot.com**
-→ DNS hasn't propagated yet. Wait 5 minutes, then try in an incognito
-   window.
+| Symptom | Cause | Fix |
+|---|---|---|
+| `sslv3 alert handshake failure` on workers.dev | New subdomain TLS not provisioned yet | Wait 5–15 min |
+| `Hostname already has externally managed DNS records` | Legacy A/CNAME on apex/www | Delete via Cloudflare DNS dashboard |
+| `You need a workers.dev subdomain` | Account-level subdomain not registered | One-time API call (Step 10) |
+| `DATABASE_URL is not configured` (500) | Missing secret | `wrangler secret put DATABASE_URL` |
+| Search returns text-only fallback | `VOYAGE_API_KEY` not set or invalid | `wrangler secret put VOYAGE_API_KEY` |
+| Cron jobs not firing | `[triggers].crons` not in wrangler.toml | Check wrangler.toml + redeploy |

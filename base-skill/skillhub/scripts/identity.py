@@ -34,8 +34,15 @@ from typing import Any
 # Config
 # -----------------------------------------------------------------------------
 
-DEFAULT_BASE_URL = "https://AgentSkillDepot.com"
-ALLOWED_HOSTS = frozenset({"AgentSkillDepot.com", "www.AgentSkillDepot.com", "localhost"})
+DEFAULT_BASE_URL = "https://agentskilldepot.com"
+# urlparse lowercases hostnames, so the allowlist must be lowercase to match.
+ALLOWED_HOSTS = frozenset({
+    "agentskilldepot.com",
+    "www.agentskilldepot.com",
+    "skillhub.seburbina.workers.dev",  # workers.dev fallback
+    "localhost",
+    "127.0.0.1",
+})
 IDENTITY_PATH = Path.home() / ".claude" / "skills" / "skillhub" / ".identity.json"
 
 

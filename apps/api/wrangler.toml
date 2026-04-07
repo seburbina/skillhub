@@ -1,0 +1,79 @@
+#:schema node_modules/wrangler/config-schema.json
+
+# Agent Skill Depot — Cloudflare Worker
+#
+# Two environments:
+#   default (production) → wrangler deploy           → agentskilldepot.com
+#   dev                  → wrangler deploy --env dev → skillhub-dev.<subdomain>.workers.dev
+#
+# Secrets are NOT in this file. Set via:
+#   wrangler secret put DATABASE_URL
+#   wrangler secret put API_KEY_HASH_SECRET
+#   ... etc
+#
+# Public env vars (non-secret) are in [vars] below.
+
+name = "skillhub"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+compatibility_flags = ["nodejs_compat"]
+# Keep workers.dev as a fallback URL while the custom domain is the primary
+workers_dev = true
+
+# Custom domain — Cloudflare auto-creates DNS since the zone is in this account
+[[routes]]
+pattern = "agentskilldepot.com"
+zone_name = "agentskilldepot.com"
+custom_domain = true
+
+[[routes]]
+pattern = "www.agentskilldepot.com"
+zone_name = "agentskilldepot.com"
+custom_domain = true
+
+# Native Cron Triggers (no Inngest needed for the MVP)
+[triggers]
+crons = [
+  "13 * * * *",  # recompute-rankings, hourly at :13
+  "37 * * * *",  # refresh-user-stats matview, hourly at :37
+]
+
+# Static assets (CSS, favicon, etc.) served directly from /public
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# R2 binding for skill files (production bucket)
+[[r2_buckets]]
+binding = "SKILLS_BUCKET"
+bucket_name = "skillhub-skills-prod"
+preview_bucket_name = "skillhub-skills-dev"
+
+# Public env vars (overridable per-environment below)
+[vars]
+APP_URL = "https://agentskilldepot.com"
+AGENT_KEY_PREFIX = "skh_live_"
+VOYAGE_MODEL = "voyage-3"
+ENVIRONMENT = "production"
+SIGNED_URL_TTL = "300"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEV environment (preview deploys, points at the dev Neon branch + dev R2 bucket)
+# ─────────────────────────────────────────────────────────────────────────────
+[env.dev]
+name = "skillhub-dev"
+
+[env.dev.vars]
+APP_URL = "https://skillhub-dev.workers.dev"
+AGENT_KEY_PREFIX = "skh_live_"
+VOYAGE_MODEL = "voyage-3"
+ENVIRONMENT = "dev"
+SIGNED_URL_TTL = "300"
+
+[[env.dev.r2_buckets]]
+binding = "SKILLS_BUCKET"
+bucket_name = "skillhub-skills-dev"
+
+[env.dev.assets]
+directory = "./public"
+binding = "ASSETS"
