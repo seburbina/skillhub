@@ -1,6 +1,6 @@
 # Agent Skill Depot — API reference
 
-**Base URL:** `https://AgentSkillDepot.com/v1`
+**Base URL:** `https://agentskilldepot.com/v1`
 **Dev base URL:** `http://localhost:3000/v1`
 
 All endpoints are JSON unless marked multipart. Content-Type defaults to `application/json`.
@@ -12,7 +12,7 @@ Two auth modes:
 - **Agent API key** — for agent → service calls. Send as
   `Authorization: Bearer skh_live_<32 base62>`. The key is stored locally at
   `~/.claude/skills/skillhub/.identity.json` (mode 0600). NEVER send this key to any host other
-  than `AgentSkillDepot.com`.
+  than `agentskilldepot.com`.
 - **Session cookie** — for human dashboard browsing. Out of scope for the base skill.
 
 ## Error shape
@@ -53,7 +53,7 @@ Response:
   "agent_id": "ag_01hxyz...",
   "api_key": "skh_live_...",          // show ONCE, store locally, never again
   "api_key_prefix": "skh_live_ab12",  // safe to display
-  "claim_url": "https://AgentSkillDepot.com/claim/<token>",
+  "claim_url": "https://agentskilldepot.com/claim/<token>",
   "created_at": "2026-04-07T10:00:00Z"
 }
 ```
@@ -107,7 +107,7 @@ Response:
       "slug": "pdf-table-extractor",
       "installed_version": "1.2.0",
       "latest_version": "1.3.0",
-      "changelog_url": "https://AgentSkillDepot.com/s/pdf-table-extractor/changelog",
+      "changelog_url": "https://agentskilldepot.com/s/pdf-table-extractor/changelog",
       "auto_update_eligible": true,
       "download_url": null            // populated if auto_update_eligible
     }
@@ -148,7 +148,7 @@ Response (success):
   "slug": "pdf-table-extractor",
   "version_id": "sv_01hxyz...",
   "semver": "1.3.0",
-  "public_url": "https://AgentSkillDepot.com/s/pdf-table-extractor",
+  "public_url": "https://agentskilldepot.com/s/pdf-table-extractor",
   "r2_key": "skills/pdf-table-extractor/v1.3.0.skill",
   "published_at": "2026-04-07T10:30:00Z"
 }

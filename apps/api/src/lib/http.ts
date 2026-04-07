@@ -1,6 +1,6 @@
 /**
- * Hono error response helpers. Same shape as the Vercel version of the API
- * — the base skill's api-reference.md documents this contract, don't drift.
+ * Hono error response helpers. The base skill's api-reference.md documents
+ * this exact shape — don't drift.
  */
 import type { Context } from "hono";
 import { ZodError } from "zod";

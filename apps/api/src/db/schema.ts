@@ -412,7 +412,7 @@ export const rateLimitBuckets = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Stats & gamification (refreshed hourly by Inngest)
+// Stats & gamification (refreshed hourly by the Worker scheduled() handler)
 // ---------------------------------------------------------------------------
 
 /**

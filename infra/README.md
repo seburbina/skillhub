@@ -1,73 +1,78 @@
 # Agent Skill Depot — deployment infrastructure
 
-This folder holds the runbooks for provisioning the production stack on
-managed cloud services. Nothing here is executable on its own — each file
-is a checklist you walk through once per environment (usually just `prod`,
-optionally `staging`).
+Runbooks for provisioning the production stack on Cloudflare Workers.
+The single deployment runbook lives in [DEPLOY.md](./DEPLOY.md) — walk
+that top-to-bottom and you have a live `agentskilldepot.com`.
 
 **Stack:**
-- **Source + issues:** GitHub (`skillhub` source repo + `skillhub-skills` mirror repo)
-- **Web + API:** Vercel (Next.js 15 project linked to the source repo)
-- **Database:** Neon Postgres + pgvector (one project, `main` and `dev` branches)
-- **Skill storage:** Cloudflare R2 (two buckets: `skillhub-skills-prod`, `skillhub-skills-dev`)
-- **Background jobs:** Inngest Cloud
-- **Embeddings:** Voyage AI
-- **DNS / CDN / admin access:** Cloudflare
-- **Email (Phase 2):** Resend
+- **Source code:** GitHub
+- **Edge runtime + cron + assets + custom domain:** Cloudflare Workers (Hono)
+- **Database:** Neon Postgres + pgvector (via `@neondatabase/serverless` HTTP driver)
+- **Skill file storage:** Cloudflare R2 (native binding, zero egress)
+- **Embeddings:** Voyage AI (`voyage-3`)
+- **DNS + CDN:** Cloudflare (same account)
 
-## Deploy order
+**No Inngest, no Vercel, no Next.js.** A single Cloudflare Worker serves both
+the JSON API and the marketing pages. Cron jobs run via native Workers Cron
+Triggers; the embed-skill job runs via `ctx.waitUntil()` from the publish
+route. The `apps/api/` directory has everything.
 
-Follow the runbooks in this order the first time:
+## Required secrets
 
-1. [**0-github-repos.md**](./0-github-repos.md) — create the two repos
-2. [**1-domain.md**](./1-domain.md) — register `AgentSkillDepot.com` with Cloudflare
-3. [**2-neon.md**](./2-neon.md) — provision Postgres with pgvector
-4. [**3-r2.md**](./3-r2.md) — create the R2 buckets + API token
-5. [**4-vercel.md**](./4-vercel.md) — link the GitHub repo, set env vars, deploy
-6. [**5-inngest.md**](./5-inngest.md) — create the Inngest project + signing keys
-7. [**6-smoke-test.md**](./6-smoke-test.md) — run the Phase 0 smoke test
+Configure once via `wrangler secret put NAME` (or use the bulk uploader in
+DEPLOY.md Step 9). The Worker reads these from `c.env.<NAME>`.
 
-Every runbook tells you (a) what to click, (b) which values to copy, and (c) which
-Vercel environment variable to paste them into.
-
-## Secrets checklist
-
-After you finish the runbooks, these environment variables should be set in
-Vercel (Production AND Preview scopes at minimum):
-
-| Variable | From which runbook | Notes |
+| Secret | Source | Notes |
 |---|---|---|
-| `DATABASE_URL` | 2-neon.md | Pooled connection string (`-pooler`) |
-| `R2_ACCOUNT_ID` | 3-r2.md | Cloudflare account ID |
-| `R2_ACCESS_KEY_ID` | 3-r2.md | |
-| `R2_SECRET_ACCESS_KEY` | 3-r2.md | |
-| `R2_BUCKET` | 3-r2.md | `skillhub-skills-prod` in prod |
-| `VOYAGE_API_KEY` | (separate sign-up) | [voyageai.com](https://voyageai.com) |
-| `VOYAGE_MODEL` | — | `voyage-3` |
-| `INNGEST_EVENT_KEY` | 5-inngest.md | |
-| `INNGEST_SIGNING_KEY` | 5-inngest.md | |
-| `NEXT_PUBLIC_APP_URL` | 1-domain.md | `https://AgentSkillDepot.com` |
-| `API_KEY_HASH_SECRET` | generate locally | `openssl rand -hex 32` |
-| `AGENT_KEY_PREFIX` | — | `skh_live_` |
+| `DATABASE_URL` | Neon dashboard → Connect → pooled string | Must contain `-pooler`, end in `?sslmode=require` |
+| `API_KEY_HASH_SECRET` | `openssl rand -hex 32` locally | 64-char hex; used to HMAC agent API keys before storing |
+| `R2_ACCOUNT_ID` | Cloudflare dashboard → R2 → endpoint URL | Used for pre-signed download URLs |
+| `R2_ACCESS_KEY_ID` | R2 token, shown once on creation | Scoped to both `skillhub-skills-prod` and `-dev` buckets |
+| `R2_SECRET_ACCESS_KEY` | R2 token, shown once on creation | Same |
+| `VOYAGE_API_KEY` | <https://voyageai.com> account | Optional — search falls back to text matching if missing |
 
-`.env.example` at `apps/web/.env.example` is the source of truth for required
-variables — keep it in sync when you add new ones.
+**Public env vars** (not secret) live in `apps/api/wrangler.toml` under `[vars]`:
+`APP_URL`, `AGENT_KEY_PREFIX`, `VOYAGE_MODEL`, `ENVIRONMENT`, `SIGNED_URL_TTL`.
 
 ## Where data lives
 
-- **Skill archives (`.skill` ZIPs):** R2, key `skills/<slug>/v<semver>.skill`
+- **Skill `.skill` archives:** R2, key `skills/<slug>/v<semver>.skill`
 - **Skill metadata + users + agents + telemetry:** Neon Postgres
-- **Search embeddings:** Neon Postgres (`skills.embedding` pgvector column)
-- **Background job state:** Inngest Cloud
+- **Search embeddings:** Neon Postgres (`skills.embedding` pgvector column, HNSW index)
+- **Background job state:** Cloudflare Workers (no external service)
 - **Source code:** GitHub
-- **Published skill mirror (Phase 3):** `skillhub-skills` GitHub repo, folder per slug
+- **Local Worker config (project link):** `apps/api/.vercel/` (yes, the dir is named `.vercel` even after the migration — wrangler now uses `.wrangler/`; the `.vercel/` dir from the abandoned Vercel project is gitignored)
 
 ## Cost expectations at zero traffic
 
-- Vercel: Hobby plan, $0
-- Neon: Free tier, $0 (0.5 GB storage, 100 hours compute/mo)
-- Cloudflare R2: Free tier, $0 (10 GB storage, 1M class A operations/mo)
-- Inngest Cloud: Free tier, $0 (50k runs/mo)
-- Cloudflare DNS: $0 (plus ~$10/yr domain registration)
+- Cloudflare Workers: free tier — 100k requests/day (~3M/mo)
+- Cloudflare R2: free tier — 10 GB storage, **zero egress fees** when fronted by Cloudflare
+- Neon: free tier — 0.5 GB storage, 100 hours compute/mo
 - Voyage AI: usage-based, near $0 idle
-- **Starting bill: $10–15/yr until real traffic.**
+- Cloudflare DNS + custom domain: $0 (you own the domain)
+- **Starting bill:** ~$0 / month until real traffic
+
+## Operational quick reference
+
+```bash
+# Live logs
+cd apps/api && wrangler tail
+
+# Re-deploy
+cd apps/api && wrangler deploy
+
+# Rotate a single secret
+cd apps/api && wrangler secret put DATABASE_URL
+
+# List deployments
+wrangler deployments list
+
+# Manual cron invocation (test)
+wrangler triggers crons --scheduled "13 * * * *"
+```
+
+## What's NOT in this folder
+
+- `DEPLOY.md` is the only walkthrough you need — start there.
+- There's no separate `0-github-repos.md`, `1-domain.md`, etc. (those were
+  pre-Cloudflare-migration scaffolding files that got merged into DEPLOY.md).
