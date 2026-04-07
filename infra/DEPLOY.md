@@ -115,6 +115,32 @@ RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxx
 EMAIL_FROM=noreply@agentskilldepot.com
 ```
 
+## Step 6c — GitHub mirror PAT (optional but recommended)
+
+Every published skill version is mirrored to
+[`seburbina/skillhub-skills`](https://github.com/seburbina/skillhub-skills)
+on a `7 * * * *` cron (`src/jobs/mirror-to-github.ts`). R2 stays
+canonical; the mirror is a free audit log + CDN fallback. The cron
+no-ops safely if the token is missing, so this step is optional for
+bring-up.
+
+1. Make sure the mirror target repo exists: `gh repo create seburbina/skillhub-skills --public --description "Agent Skill Depot — published skills mirror" --license mit` (or create it in the GitHub UI).
+2. Generate a fine-grained PAT: <https://github.com/settings/personal-access-tokens/new>
+   - **Token name:** `skillhub-skills mirror`
+   - **Expiration:** 1 year (or longer)
+   - **Repository access:** *Only select repositories* → `seburbina/skillhub-skills`
+   - **Permissions → Repository permissions → Contents:** `Read and write`
+   - Leave everything else at defaults → **Generate token**
+3. Copy the `github_pat_…` value and add it to `~/.config/skillhub/secrets.env`:
+   ```
+   GITHUB_MIRROR_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+4. The bulk uploader in Step 9 will push it alongside the other secrets.
+
+If the token is missing or invalid, `wrangler tail` will show the
+hourly `[mirror-to-github] GITHUB_MIRROR_TOKEN not set; skipping`
+log line — no user-facing impact, just no mirror.
+
 ## Step 7 — Local toolchain
 
 You need Node 20+, pnpm, and wrangler. Easiest path on macOS without Homebrew:
@@ -158,7 +184,13 @@ R2_SECRET_ACCESS_KEY=<from Step 4>
 VOYAGE_API_KEY=<from Step 6>
 RESEND_API_KEY=<from Step 6b>
 EMAIL_FROM=noreply@agentskilldepot.com
+GITHUB_MIRROR_TOKEN=<from Step 6c, optional>
 ```
+
+> **Note on URL-containing values:** `secrets.env` is **not** a shell
+> file — don't `source` it. Values like `DATABASE_URL` contain `?` and
+> `&` which zsh will try to interpret. Parse it with Python instead
+> (see the block below).
 
 Push them to Cloudflare via wrangler:
 ```bash
@@ -180,6 +212,7 @@ for key in (
     "VOYAGE_API_KEY",
     "RESEND_API_KEY",
     "EMAIL_FROM",
+    "GITHUB_MIRROR_TOKEN",
 ):
     if key not in secrets or not secrets[key]:
         print(f"{key}: SKIP (missing or empty)")
@@ -217,16 +250,38 @@ After a successful deploy you'll see:
 https://skillhub.<your>.workers.dev
 agentskilldepot.com (custom domain)
 www.agentskilldepot.com (custom domain)
+admin.agentskilldepot.com (custom domain)
 schedule: 13 * * * *
 schedule: 37 * * * *
+schedule: 7 * * * *
 ```
+
+⚠️ **Important:** deploying the admin custom domain makes
+`https://admin.agentskilldepot.com` reachable from the public internet
+immediately. The Worker trusts the host header — Cloudflare Access is
+what actually protects it. **Configure Access (Step 15) before anyone
+else learns the URL**, otherwise the admin queue is exposed.
 
 ## Step 11 — Apply Drizzle migrations
 
+The repo has three migration scripts. Run them in order:
+
 ```bash
 cd apps/api
+
+# (1) Initial schema — 16 tables + extensions + HNSW index + materialized view seed
 DATABASE_URL="<production string from Step 3>" node scripts/migrate.mjs
+
+# (2) Matview fix-up — drops the Drizzle-generated `user_stats` table and
+#     recreates it as a real MATERIALIZED VIEW so the :37 refresh cron works.
+DATABASE_URL="<...>" node scripts/fix-user-stats-matview.mjs
+
+# (3) Phase 3 — reporter_agent_id FK on moderation_flags + composite dedupe
+#     index + backfill from the old admin_notes prefix convention.
+DATABASE_URL="<...>" node scripts/add-reporter-agent-fk.mjs
 ```
+
+All three are **idempotent** — safe to re-run.
 
 Verify with a quick query:
 ```bash
@@ -237,7 +292,9 @@ const t = await sql(\"SELECT tablename FROM pg_tables WHERE schemaname='public' 
 console.log(t.length, 'tables:', t.map(r=>r.tablename).join(', '));
 "
 ```
-Expect 16 tables.
+Expect 16 tables. `user_stats` is a MATERIALIZED VIEW so it won't
+appear in `pg_tables` — check with `SELECT matviewname FROM
+pg_matviews;` if you want to confirm it.
 
 ## Step 12 — Phase 0 smoke test
 
@@ -306,7 +363,81 @@ If the email doesn't arrive within ~30 seconds:
   only delivers to your own verified inbox. Switch to
   `noreply@agentskilldepot.com` (Step 6b) to send to arbitrary users.
 - Check that `RESEND_API_KEY` and `EMAIL_FROM` are set in `wrangler secret list`
-- Check SPF/DKIM/DMARC are all green in Resend → **Domains**
+- Check SPF/DKIM are green in Resend → **Domains**
+
+## Step 15 — Cloudflare Access for the admin surface (REQUIRED)
+
+The Worker serves a read-only admin UI at `https://admin.agentskilldepot.com`
+via host-based branching. Authentication is provided entirely by
+Cloudflare Access at the edge — the Worker trusts the host header
+because unauth traffic never reaches it.
+
+**You MUST configure Access before or immediately after Step 10.** The
+admin custom domain becomes live as soon as `wrangler deploy` runs; if
+Access is not configured, the moderation queue and agent lookup pages
+are publicly reachable.
+
+1. Cloudflare dashboard → account (not zone) → **Zero Trust** in the left sidebar
+   - First time using Zero Trust? Pick a team name (any string, becomes
+     `<team>.cloudflareaccess.com`) and choose the **Free** plan (up
+     to 50 users, no card required).
+2. **Access → Applications → Add an application → Self-hosted**
+3. Application configuration:
+   - **Application name:** `skillhub admin`
+   - **Session duration:** `24 hours`
+   - **Subdomain:** `admin`
+   - **Domain:** `agentskilldepot.com`
+   - **Path:** leave blank (covers `/*`)
+   - Everything else default → **Next**
+4. **Add policy:**
+   - **Policy name:** `email allowlist`
+   - **Action:** `Allow`
+   - **Session duration:** `Same as application`
+   - **Include → Selector: Emails → Value:** your admin email(s)
+   - **Next → Add application**
+5. Provisioning takes ~30 seconds. Verify:
+   ```bash
+   curl -sI https://admin.agentskilldepot.com/queue | head -5
+   ```
+   Expect `HTTP/2 302` with a `location:` header pointing at your
+   `<team>.cloudflareaccess.com` login URL. A `200` here means Access
+   is **not** gating the surface — fix it immediately.
+6. Browser smoke test: open `https://admin.agentskilldepot.com/queue`,
+   complete the identity-provider login (email OTP is the default),
+   and land on the moderation queue.
+
+## Step 16 — Verify the GitHub mirror cron (optional)
+
+The `7 * * * *` cron (`apps/api/src/jobs/mirror-to-github.ts`) walks
+`skill_versions` rows where `github_commit_sha IS NULL AND yanked_at
+IS NULL`, fetches each from R2, unzips, and PUTs every file to
+`seburbina/skillhub-skills` via the GitHub Contents API.
+
+After the first scheduled firing (`:07` of the next hour):
+
+```bash
+# Mirror repo should contain the inaugural skill
+gh api repos/seburbina/skillhub-skills/contents/skillhub/v0.1.0 --jq '.[].name'
+# → SKILL.md, LICENSE.txt, references, scripts, assets
+
+# Worker should have stamped the commit SHA
+DATABASE_URL="..." node --input-type=module -e "
+import { neon } from '@neondatabase/serverless';
+const sql = neon(process.env.DATABASE_URL);
+const r = await sql(\"SELECT semver, github_commit_sha FROM skill_versions ORDER BY published_at DESC LIMIT 5\");
+console.table(r);
+"
+```
+
+Cron log pattern (watch with `wrangler tail`):
+```
+[scheduled] cron=7 * * * *
+[mirrorToGithub] done { mirrored: 1, skipped: 0, errors: 0 }
+```
+
+If you see `GITHUB_MIRROR_TOKEN not set; skipping`, the secret is
+missing — re-run Step 9's bulk upload or
+`wrangler secret put GITHUB_MIRROR_TOKEN` individually.
 
 ---
 
