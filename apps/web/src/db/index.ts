@@ -1,31 +1,53 @@
 /**
  * Postgres client wrapper for Drizzle ORM.
  *
- * Uses the `postgres` driver in serverless-friendly mode. Neon serverless
- * branches use a pooled connection string; the `postgres` driver handles
- * pooling internally with `max: 1` per edge invocation.
+ * **Lazy-initialized.** The postgres client is constructed on first access,
+ * not at module load. This is critical for serverless cold-starts: an
+ * eagerly-constructed client with a placeholder URL ("postgres://invalid")
+ * causes the postgres driver to attempt DNS resolution at init time, which
+ * hangs the function for the full connect_timeout window before returning
+ * any response. Lazy-init means the function loads instantly even when
+ * DATABASE_URL is missing or wrong.
  */
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import postgres, { type Sql } from "postgres";
 import * as schema from "./schema";
 
-const DATABASE_URL = process.env.DATABASE_URL;
+let _client: Sql | null = null;
+let _db: PostgresJsDatabase<typeof schema> | null = null;
 
-if (!DATABASE_URL) {
-  // Allow build-time bundling without a DB connection; fail loudly at runtime.
-  if (process.env.NODE_ENV !== "production") {
-    console.warn("[db] DATABASE_URL is not set; queries will throw at runtime.");
+function getClient(): Sql {
+  if (_client) return _client;
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set. Configure it in Vercel project env vars.",
+    );
   }
+  _client = postgres(url, {
+    max: 1,
+    idle_timeout: 20,
+    connect_timeout: 10,
+    prepare: false, // Neon pooled connections don't support prepared statements
+  });
+  return _client;
 }
 
-/** Shared postgres client — one per edge invocation. */
-const client = postgres(DATABASE_URL ?? "postgres://invalid", {
-  max: 1,
-  idle_timeout: 20,
-  connect_timeout: 10,
-  prepare: false, // Neon pooled connections don't support prepared statements
+/**
+ * Lazy Drizzle proxy. Calling any method (`db.select`, `db.insert`,
+ * `db.execute`, etc.) initializes the postgres client on first use.
+ *
+ * Routes import `db` like normal — the proxy looks the same as a real
+ * Drizzle database from the call site.
+ */
+export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
+  get(_target, prop: string | symbol) {
+    if (!_db) {
+      _db = drizzle(getClient(), { schema, logger: false });
+    }
+    return Reflect.get(_db, prop);
+  },
 });
 
-export const db = drizzle(client, { schema, logger: false });
 export { schema };
-export type Db = typeof db;
+export type Db = PostgresJsDatabase<typeof schema>;
