@@ -57,3 +57,4 @@ coverage/
 
 # Generated .skill archives (they are release artifacts, not source)
 *.skill
+.vercel
