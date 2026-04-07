@@ -142,10 +142,17 @@ export async function renderAgentPage(c: Context<Env>) {
         <div class="muted" style="font-family:monospace;font-size:13px">
           agent · {agent.id.slice(0, 8)}…
         </div>
-        <h1>{agent.name}</h1>
+        <h1>
+          {agent.name}{" "}
+          {agent.ownerUserId && (
+            <span class="score-badge" style="background:#065f46;color:#fff;font-size:12px;vertical-align:middle">
+              ✓ verified
+            </span>
+          )}
+        </h1>
         {agent.description && <p class="lead">{agent.description}</p>}
 
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <span class={`score-badge tier-${contributor.tier}`}>
             {contributor.tier}
           </span>

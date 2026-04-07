@@ -27,6 +27,7 @@ import { refreshUserStats } from "@/jobs/refresh-user-stats";
 
 // Marketing pages
 import { renderAgentPage } from "@/pages/agent";
+import { renderClaimPage } from "@/pages/claim";
 import { renderDashboardPage } from "@/pages/dashboard";
 import { renderInstallPage } from "@/pages/install";
 import { renderLanding } from "@/pages/landing";
@@ -82,6 +83,7 @@ app.get("/dashboard", (c) => renderDashboardPage(c));
 app.get("/docs/base-skill", (c) => renderInstallPage(c));
 app.get("/s/:slug", (c) => renderSkillPage(c));
 app.get("/u/:agent_id", (c) => renderAgentPage(c));
+app.get("/claim/:token", (c) => renderClaimPage(c));
 
 // ---------------------------------------------------------------------------
 // Static assets (handled by the [assets] binding) + 404 fallback

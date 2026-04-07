@@ -11,6 +11,15 @@ import {
   requireAgent,
 } from "@/lib/auth";
 import { generateChallenge, isNewUnverifiedAgent } from "@/lib/challenge";
+import {
+  CLAIM_TOKEN_TTL_MINUTES,
+  generateClaimToken,
+} from "@/lib/claim-token";
+import {
+  claimEmailHtml,
+  claimEmailText,
+  sendEmail,
+} from "@/lib/email";
 import { clientIp, errorResponse } from "@/lib/http";
 import { computeContributorScore } from "@/lib/ranking";
 import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
@@ -249,6 +258,7 @@ agents.get("/:id", async (c) => {
       id: agentsTable.id,
       name: agentsTable.name,
       description: agentsTable.description,
+      ownerUserId: agentsTable.ownerUserId,
       reputationScore: agentsTable.reputationScore,
       createdAt: agentsTable.createdAt,
       lastSeenAt: agentsTable.lastSeenAt,
@@ -357,6 +367,8 @@ agents.get("/:id", async (c) => {
       agent_id: agent.id,
       name: agent.name,
       description: agent.description,
+      verified: agent.ownerUserId !== null,
+      owner_user_id: agent.ownerUserId,
       reputation_score: Number(agent.reputationScore),
       created_at: agent.createdAt.toISOString(),
       last_seen_at: agent.lastSeenAt?.toISOString() ?? null,
@@ -394,6 +406,83 @@ agents.get("/:id", async (c) => {
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+// ---------------------------------------------------------------------------
+// POST /v1/agents/me/claim/start  — request a magic-link to claim ownership
+// ---------------------------------------------------------------------------
+
+const ClaimStartBody = z.object({
+  email: z.string().email().max(254),
+});
+
+agents.post("/me/claim/start", async (c) => {
+  const agent = getAgent(c);
+
+  if (!c.env.RESEND_API_KEY) {
+    return errorResponse(
+      c,
+      "server_error",
+      "Email is not configured on this deployment.",
+      { hint: "Set RESEND_API_KEY in wrangler secrets." },
+    );
+  }
+
+  // If already claimed, return early
+  if (agent.ownerUserId) {
+    return errorResponse(
+      c,
+      "conflict",
+      "This agent is already claimed.",
+      { hint: "Use the existing owner's account or rotate to a new agent." },
+    );
+  }
+
+  const parsed = ClaimStartBody.safeParse(
+    await c.req.json().catch(() => null),
+  );
+  if (!parsed.success) {
+    return errorResponse(c, "invalid_input", "Invalid claim start body.", {
+      details: parsed.error.issues,
+    });
+  }
+  const email = parsed.data.email.toLowerCase().trim();
+
+  // Generate the stateless magic-link token
+  const token = await generateClaimToken(
+    { agent_id: agent.id, email },
+    c.env,
+  );
+  const claimUrl = `${c.env.APP_URL}/claim/${encodeURIComponent(token)}`;
+
+  // Send via Resend. If this fails, surface the error to the agent so the
+  // user knows to retry — don't pretend it worked.
+  try {
+    const params = {
+      agentName: agent.name,
+      claimUrl,
+      expiresInMinutes: CLAIM_TOKEN_TTL_MINUTES,
+    };
+    await sendEmail(c.env, {
+      to: email,
+      subject: `Claim your Agent Skill Depot agent (${agent.name})`,
+      html: claimEmailHtml(params),
+      text: claimEmailText(params),
+    });
+  } catch (e) {
+    return errorResponse(
+      c,
+      "server_error",
+      `Email send failed: ${(e as Error).message}`,
+    );
+  }
+
+  return c.json({
+    ok: true,
+    sent_to: email,
+    expires_in_minutes: CLAIM_TOKEN_TTL_MINUTES,
+    hint: "Check your inbox and click the link. The agent stays unverified until you click.",
+  });
+});
 
 // POST /v1/agents/me/rotate-key
 agents.post("/me/rotate-key", async (c) => {

@@ -11,12 +11,15 @@ Commands:
                               — register a new agent, store the key
     show                      — print the prefix (safe) and claim_url
     rotate                    — rotate the API key
+    claim --email <e>         — start the magic-link claim flow; user clicks
+                                the link in their inbox to verify ownership
 
 Usage:
     python3 identity.py status
     python3 identity.py register --name "my-agent" --description "..."
     python3 identity.py show
     python3 identity.py rotate
+    python3 identity.py claim --email "you@example.com"
 """
 from __future__ import annotations
 
@@ -90,6 +93,23 @@ def _validate_base_url(base_url: str) -> None:
         )
 
 
+def _get_json(base_url: str, path: str, api_key: str | None = None) -> dict:
+    _validate_base_url(base_url)
+    url = base_url.rstrip("/") + path
+    headers = {"User-Agent": "skillhub-base-skill/0.0.1"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body_text = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {e.code}: {body_text}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"network error: {e.reason}") from e
+
+
 def _post_json(base_url: str, path: str, body: dict, api_key: str | None = None) -> dict:
     _validate_base_url(base_url)
     url = base_url.rstrip("/") + path
@@ -124,9 +144,22 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"agent_id: {ident.get('agent_id')}")
     print(f"api_key_prefix: {ident.get('api_key_prefix')}")
     print(f"created_at: {ident.get('created_at')}")
-    if not ident.get("claimed"):
-        print(f"claim_url: {ident.get('claim_url')}")
-        print("(claim status: unclaimed)")
+
+    # Hit /v1/agents/me to get the canonical server-side claim state.
+    # If we can't reach the server, fall back to the cached local flag.
+    base_url = ident.get("base_url", DEFAULT_BASE_URL)
+    try:
+        me = _get_json(base_url, "/v1/agents/me", api_key=ident["api_key"])
+        if me.get("verified"):
+            print("(claim status: verified by email)")
+        else:
+            print(f"claim_url: {ident.get('claim_url')}")
+            print("(claim status: unclaimed — run `identity.py claim --email you@example.com`)")
+    except Exception:  # noqa: BLE001
+        # Offline / network error — show cached state
+        if not ident.get("claimed"):
+            print(f"claim_url: {ident.get('claim_url')}")
+            print("(claim status: unknown — server unreachable, showing cached state)")
     return 0
 
 
@@ -182,6 +215,35 @@ def cmd_show(args: argparse.Namespace) -> int:
     safe = {k: v for k, v in ident.items() if k != "api_key"}
     safe["api_key"] = f"{ident.get('api_key_prefix', '')}… (full key in {IDENTITY_PATH})"
     print(json.dumps(safe, indent=2))
+    return 0
+
+
+def cmd_claim(args: argparse.Namespace) -> int:
+    ident = load_identity()
+    if ident is None:
+        print("error: no identity to claim. run `register` first.", file=sys.stderr)
+        return 1
+    if ident.get("claimed"):
+        print(f"already claimed (agent_id={ident.get('agent_id')})", file=sys.stderr)
+        return 0
+
+    base_url = ident.get("base_url", DEFAULT_BASE_URL)
+    try:
+        resp = _post_json(
+            base_url,
+            "/v1/agents/me/claim/start",
+            {"email": args.email},
+            api_key=ident["api_key"],
+        )
+    except (RuntimeError, ValueError) as e:
+        print(f"claim start failed: {e}", file=sys.stderr)
+        return 2
+
+    print(f"sent claim email to {resp.get('sent_to', args.email)}")
+    print(f"link expires in {resp.get('expires_in_minutes', 60)} minutes")
+    print()
+    print("Check your inbox and click the link to confirm. Once you do, your")
+    print("agent profile will show a verified badge and the claim is permanent.")
     return 0
 
 
@@ -244,6 +306,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p_show = sub.add_parser("show", help="print the current identity (without the raw key)")
     p_show.set_defaults(func=cmd_show)
+
+    p_claim = sub.add_parser(
+        "claim",
+        help="start the magic-link email claim flow",
+    )
+    p_claim.add_argument(
+        "--email", required=True,
+        help="email address to send the claim link to",
+    )
+    p_claim.set_defaults(func=cmd_claim)
 
     p_rotate = sub.add_parser("rotate", help="rotate the API key")
     p_rotate.set_defaults(func=cmd_rotate)

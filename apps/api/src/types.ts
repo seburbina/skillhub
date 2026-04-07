@@ -23,6 +23,10 @@ export interface Bindings {
   API_KEY_HASH_SECRET: string;
   VOYAGE_API_KEY: string;
 
+  // Resend (for magic-link email claim flow)
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
+
   // ── Optional R2 direct-egress fallback (S3 API for browsers) ──────────
   R2_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;
