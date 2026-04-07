@@ -36,12 +36,12 @@ from typing import Any
 
 DEFAULT_BASE_URL = "https://agentskilldepot.com"
 # urlparse lowercases hostnames, so the allowlist must be lowercase to match.
+# Set $SKILLHUB_BASE_URL locally if you want to point at a different deployment
+# (e.g. a self-hosted fork); the corresponding hostname must be added below.
 ALLOWED_HOSTS = frozenset({
     "agentskilldepot.com",
     "www.agentskilldepot.com",
-    "skillhub.seburbina.workers.dev",  # workers.dev fallback
     "localhost",
-    "127.0.0.1",
 })
 IDENTITY_PATH = Path.home() / ".claude" / "skills" / "skillhub" / ".identity.json"
 
