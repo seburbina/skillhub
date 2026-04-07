@@ -383,21 +383,35 @@ export const entitlements = pgTable(
 // Moderation / abuse
 // ---------------------------------------------------------------------------
 
-export const moderationFlags = pgTable("moderation_flags", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  targetType: text("target_type").notNull(), // 'skill' | 'agent' | 'user'
-  targetId: uuid("target_id").notNull(),
-  reporterUserId: uuid("reporter_user_id").references(() => users.id, {
-    onDelete: "set null",
+export const moderationFlags = pgTable(
+  "moderation_flags",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    targetType: text("target_type").notNull(), // 'skill' | 'agent' | 'user'
+    targetId: uuid("target_id").notNull(),
+    reporterUserId: uuid("reporter_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reporterAgentId: uuid("reporter_agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
+    reason: text("reason").notNull(),
+    status: moderationStatusEnum("status").notNull().default("open"),
+    adminNotes: text("admin_notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => ({
+    dedupeIdx: index("moderation_flags_dedupe_idx").on(
+      t.targetType,
+      t.targetId,
+      t.reporterAgentId,
+      t.reason,
+    ),
   }),
-  reason: text("reason").notNull(),
-  status: moderationStatusEnum("status").notNull().default("open"),
-  adminNotes: text("admin_notes"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-});
+);
 
 export const rateLimitBuckets = pgTable(
   "rate_limit_buckets",

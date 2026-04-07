@@ -32,7 +32,7 @@ DEPLOY.md Step 9). The Worker reads these from `c.env.<NAME>`.
 | `R2_SECRET_ACCESS_KEY` | R2 token, shown once on creation | Same |
 | `VOYAGE_API_KEY` | <https://voyageai.com> account | Optional — search falls back to text matching if missing |
 | `RESEND_API_KEY` | <https://resend.com/api-keys> | Required for the magic-link email claim flow. `POST /v1/agents/me/claim/start` returns 500 if missing. The Worker uses this to send claim emails via the Resend API. |
-| `EMAIL_FROM` | (your choice) | The From address for claim emails. Use `onboarding@resend.dev` for development; switch to `noreply@agentskilldepot.com` once you've verified the domain in Resend (SPF/DKIM DNS records). |
+| `EMAIL_FROM` | (your choice) | The From address for claim emails. Production default: `noreply@agentskilldepot.com` (requires domain verified in Resend with SPF + DKIM + DMARC TXT records in Cloudflare DNS — see DEPLOY.md Step 6b). Dev-only fallback: `onboarding@resend.dev`, which only delivers to your own verified inbox. |
 
 **Public env vars** (not secret) live in `apps/api/wrangler.toml` under `[vars]`:
 `APP_URL`, `AGENT_KEY_PREFIX`, `VOYAGE_MODEL`, `ENVIRONMENT`, `SIGNED_URL_TTL`.
