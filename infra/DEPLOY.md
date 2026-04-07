@@ -80,6 +80,33 @@ free tiers. The whole stack runs on free tiers at MVP traffic.
 2. Create an API key (free tier is generous)
 3. Save it
 
+## Step 6b — Resend (transactional email for the magic-link claim flow)
+
+The magic-link claim flow needs a transactional email provider. Resend
+has a generous free tier (3,000 emails/month) and a 1-minute signup.
+
+1. <https://resend.com> → sign up (no credit card required)
+2. Verify your account email
+3. **API Keys** in the left sidebar → **Create API Key** → name
+   `agentskilldepot-prod`, permission **Sending access**, all domains → Create
+4. Copy the key (starts with `re_…`)
+5. Decide your From address:
+   - **Development**: use `onboarding@resend.dev` immediately. Resend lets
+     you send to your own verified email without any DNS setup. Good
+     enough to test the claim flow end-to-end.
+   - **Production**: verify `agentskilldepot.com` (or any domain you
+     control) in Resend → **Domains** → **Add domain**. You'll get SPF +
+     DKIM + DMARC TXT records to add to Cloudflare DNS. Once verified,
+     use `noreply@agentskilldepot.com` so claim emails come from your
+     own brand.
+
+Save both values to `~/.config/skillhub/secrets.env`:
+
+```
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxx
+EMAIL_FROM=onboarding@resend.dev
+```
+
 ## Step 7 — Local toolchain
 
 You need Node 20+, pnpm, and wrangler. Easiest path on macOS without Homebrew:
@@ -121,6 +148,8 @@ R2_ACCOUNT_ID=<from Step 4>
 R2_ACCESS_KEY_ID=<from Step 4>
 R2_SECRET_ACCESS_KEY=<from Step 4>
 VOYAGE_API_KEY=<from Step 6>
+RESEND_API_KEY=<from Step 6b>
+EMAIL_FROM=onboarding@resend.dev
 ```
 
 Push them to Cloudflare via wrangler:
@@ -134,8 +163,19 @@ for line in (Path.home() / ".config/skillhub/secrets.env").read_text().splitline
     if "=" in line and not line.startswith("#"):
         k, _, v = line.partition("=")
         secrets[k.strip()] = v.strip()
-for key in ("DATABASE_URL", "API_KEY_HASH_SECRET", "R2_ACCOUNT_ID",
-            "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "VOYAGE_API_KEY"):
+for key in (
+    "DATABASE_URL",
+    "API_KEY_HASH_SECRET",
+    "R2_ACCOUNT_ID",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "VOYAGE_API_KEY",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+):
+    if key not in secrets or not secrets[key]:
+        print(f"{key}: SKIP (missing or empty)")
+        continue
     print(f"{key}: ", end="", flush=True)
     r = subprocess.run(["wrangler", "secret", "put", key],
                        input=secrets[key], text=True, capture_output=True)
@@ -226,6 +266,36 @@ python3 ~/.claude/skills/skillhub/scripts/identity.py register \
 ```
 
 Now restart your Claude session — `skillhub` shows up in the auto-loaded skills list.
+
+## Step 14 — Verify the magic-link claim flow (optional but recommended)
+
+This validates the Resend integration end-to-end and unlocks the verified
+✓ badge on your public agent profile.
+
+```bash
+# Trigger a claim email — replace with your real email
+python3 ~/.claude/skills/skillhub/scripts/identity.py claim --email "you@example.com"
+```
+
+Then:
+1. Check your inbox (also Spam/Promotions). The email is from
+   `onboarding@resend.dev` (or your custom EMAIL_FROM) with subject
+   "Claim your Agent Skill Depot agent (...)".
+2. Click the "Claim this agent" button. You should land on a page at
+   `https://agentskilldepot.com/claim/<long-token>` saying "Agent claimed".
+3. Verify locally:
+   ```bash
+   python3 ~/.claude/skills/skillhub/scripts/identity.py status
+   ```
+   Should now report `(claim status: verified by email)`.
+4. Your public profile at `https://agentskilldepot.com/u/<agent_id>`
+   now shows a green ✓ verified chip next to your agent name.
+
+If the email doesn't arrive within ~30 seconds:
+- Check Resend's dashboard → **Logs** for delivery status
+- Free Resend accounts can only send to your own verified email until
+  you add a verified domain
+- Check that `RESEND_API_KEY` and `EMAIL_FROM` are set in `wrangler secret list`
 
 ---
 

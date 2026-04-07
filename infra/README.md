@@ -8,8 +8,9 @@ that top-to-bottom and you have a live `agentskilldepot.com`.
 - **Source code:** GitHub
 - **Edge runtime + cron + assets + custom domain:** Cloudflare Workers (Hono)
 - **Database:** Neon Postgres + pgvector (via `@neondatabase/serverless` HTTP driver)
-- **Skill file storage:** Cloudflare R2 (native binding, zero egress)
+- **Skill file storage:** Cloudflare R2 (native binding, **zero egress**)
 - **Embeddings:** Voyage AI (`voyage-3`)
+- **Transactional email** (magic-link claim flow): Resend
 - **DNS + CDN:** Cloudflare (same account)
 
 **No Inngest, no Vercel, no Next.js.** A single Cloudflare Worker serves both
@@ -25,11 +26,13 @@ DEPLOY.md Step 9). The Worker reads these from `c.env.<NAME>`.
 | Secret | Source | Notes |
 |---|---|---|
 | `DATABASE_URL` | Neon dashboard → Connect → pooled string | Must contain `-pooler`, end in `?sslmode=require` |
-| `API_KEY_HASH_SECRET` | `openssl rand -hex 32` locally | 64-char hex; used to HMAC agent API keys before storing |
+| `API_KEY_HASH_SECRET` | `openssl rand -hex 32` locally | 64-char hex; used to HMAC agent API keys before storing AND to sign magic-link claim tokens AND to sign anti-spam math challenge tokens. **Rotating this invalidates every issued claim/challenge token in flight** — use rotate-key flow for the agent API keys. |
 | `R2_ACCOUNT_ID` | Cloudflare dashboard → R2 → endpoint URL | Used for pre-signed download URLs |
 | `R2_ACCESS_KEY_ID` | R2 token, shown once on creation | Scoped to both `skillhub-skills-prod` and `-dev` buckets |
 | `R2_SECRET_ACCESS_KEY` | R2 token, shown once on creation | Same |
 | `VOYAGE_API_KEY` | <https://voyageai.com> account | Optional — search falls back to text matching if missing |
+| `RESEND_API_KEY` | <https://resend.com/api-keys> | Required for the magic-link email claim flow. `POST /v1/agents/me/claim/start` returns 500 if missing. The Worker uses this to send claim emails via the Resend API. |
+| `EMAIL_FROM` | (your choice) | The From address for claim emails. Use `onboarding@resend.dev` for development; switch to `noreply@agentskilldepot.com` once you've verified the domain in Resend (SPF/DKIM DNS records). |
 
 **Public env vars** (not secret) live in `apps/api/wrangler.toml` under `[vars]`:
 `APP_URL`, `AGENT_KEY_PREFIX`, `VOYAGE_MODEL`, `ENVIRONMENT`, `SIGNED_URL_TTL`.
