@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# Env + secrets (NEVER commit)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+.identity.json
+credentials.json
+secrets.*
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# Local scratch
+.queue/
+.session_state/
+*.sanitized/
+*.previous/
+
+# Drizzle
+drizzle/
+
+# Test output
+coverage/
+.nyc_output/
+
+# Generated .skill archives (they are release artifacts, not source)
+*.skill

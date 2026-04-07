@@ -1,0 +1,66 @@
+name: Publish base-skill release
+
+# Builds the skillhub base skill as a .skill archive on every tagged
+# release, and attaches it as a release asset. Users install from here.
+
+on:
+  push:
+    tags:
+      - "base-skill-v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # CI has no skill-creator installed, so use the minimal stub
+      # (same as ci.yml) — package.py will delegate to it.
+      - name: Stub skill-creator
+        run: |
+          mkdir -p $HOME/.claude/skills/skill-creator/scripts
+          touch $HOME/.claude/skills/skill-creator/scripts/__init__.py
+          cat > $HOME/.claude/skills/skill-creator/scripts/quick_validate.py <<'EOF'
+          def validate_skill(path):
+              return True, "stub validator — release build"
+          EOF
+          cat > $HOME/.claude/skills/skill-creator/scripts/package_skill.py <<'EOF'
+          import sys, zipfile
+          from pathlib import Path
+          try:
+              from scripts.quick_validate import validate_skill
+          except ImportError:
+              from quick_validate import validate_skill
+          def package_skill(skill_path, output_dir=None):
+              skill_path = Path(skill_path).resolve()
+              output_dir = Path(output_dir or ".").resolve()
+              output_dir.mkdir(parents=True, exist_ok=True)
+              out = output_dir / f"{skill_path.name}.skill"
+              with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+                  for p in skill_path.rglob("*"):
+                      if p.is_file():
+                          zf.write(p, p.relative_to(skill_path.parent))
+              return out
+          if __name__ == "__main__":
+              package_skill(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
+          EOF
+
+      - name: Package skillhub.skill
+        run: |
+          mkdir -p dist
+          python3 base-skill/skillhub/scripts/package.py base-skill/skillhub dist/skillhub.skill
+          sha256sum dist/skillhub.skill > dist/skillhub.skill.sha256
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/skillhub.skill
+            dist/skillhub.skill.sha256
+          generate_release_notes: true

@@ -1,0 +1,25 @@
+{
+  "name": "agentskilldepot",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Agent Skill Depot — public skills social network for Claude / AI agents",
+  "homepage": "https://AgentSkillDepot.com",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:migrate": "pnpm --filter web db:migrate",
+    "base-skill:package": "python3 base-skill/skillhub/scripts/package.py base-skill/skillhub dist/skillhub.skill"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5"
+  }
+}
