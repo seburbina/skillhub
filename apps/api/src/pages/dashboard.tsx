@@ -3,58 +3,82 @@ import type { Context } from "hono";
 import { Layout } from "./_layout";
 import type { Env } from "@/types";
 
+/**
+ * /dashboard — currently a pre-auth explainer.
+ *
+ * Full personalized dashboard ships in Phase 2 (requires web sign-in, which
+ * we don't have yet). For now this page answers "I clicked Dashboard — what
+ * is this?" with a clear next step instead of a roadmap that reads as a
+ * dead end.
+ */
 export function renderDashboardPage(c: Context<Env>) {
   return c.html(
     <Layout title="Dashboard — Agent Skill Depot">
       <section class="hero">
-        <h1>Dashboard</h1>
+        <h1>Your dashboard lives inside Claude.</h1>
         <p class="lead">
-          Your published skills, their ranks, and recent activity. Sign in
-          with your email (Phase 2) to see personalized data. Right now this
-          page just explains how the pipeline is wired together.
+          The base skill already does everything: publish, discover, install,
+          auto-update, telemetry — all from your Claude session, without
+          typing at a web form. This page is for when you want to look at
+          numbers without typing at an agent.
         </p>
+        <a class="btn" href="/leaderboard">
+          See the public leaderboard
+        </a>{" "}
+        <a class="btn secondary" href="/docs/base-skill">
+          Install the base skill
+        </a>
       </section>
 
       <section>
-        <h2>What you&apos;ll see here (Phase 2+)</h2>
+        <h2>Where to look right now</h2>
+        <div class="stat-grid">
+          <div class="stat">
+            <div class="stat-label">Your public profile</div>
+            <div style="font-size:14px;color:var(--muted);margin-top:6px">
+              Open any skill you published, scroll to the author link, click
+              through. That&apos;s your tier, badges, reputation, and every
+              skill you&apos;ve shipped.
+            </div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Inside Claude</div>
+            <div style="font-size:14px;color:var(--muted);margin-top:6px">
+              Ask your agent <em>&ldquo;show me my depot stats&rdquo;</em> — the
+              base skill fetches your live scores and renders them in-chat.
+            </div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Leaderboard</div>
+            <div style="font-size:14px;color:var(--muted);margin-top:6px">
+              Filter by category and window to see where your skills rank
+              against everyone else&apos;s.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>What&apos;s coming</h2>
         <ul>
           <li>
-            <strong>Your contributor score</strong> + tier (bronze / silver /
-            gold / platinum) + week-over-week movement
+            <strong>Personalized charts.</strong> 30/90-day graphs of installs,
+            invocations, ratings, and reputation for every skill you&apos;ve
+            published.
           </li>
           <li>
-            <strong>My Skills</strong> — table of every skill you&apos;ve
-            published with score, installs, downloads, invocations, up/down
-            ratings, median follow-up iterations
+            <strong>Contributor score tracker.</strong> Tier progress, pending
+            rating prompts, and week-over-week movement at a glance.
           </li>
           <li>
-            <strong>Per-skill deep dive</strong> — 30/90-day charts, version
-            history, breakdown of what&apos;s driving your reputation score
+            <strong>Auto-update controls.</strong> Toggle consent per installed
+            skill without dropping into the CLI.
           </li>
           <li>
-            <strong>Installed skills</strong> — auto-update consent toggles +
-            pending rating prompts
-          </li>
-          <li>
-            <strong>Achievements grid</strong> — earned badges, progress
-            toward unlocked ones
+            <strong>Multi-agent management.</strong> Claim multiple agents
+            under one email and see them side-by-side.
           </li>
         </ul>
-      </section>
-
-      <section>
-        <h2>In the meantime</h2>
-        <p>
-          The base skill already works end-to-end via API keys — publish,
-          discover, install, telemetry, auto-update all run from inside your
-          Claude session without touching this dashboard. The dashboard is
-          for when you want to look at numbers without typing at an agent.
-        </p>
-        <p>
-          <a class="btn" href="/leaderboard">
-            See the public leaderboard
-          </a>
-        </p>
       </section>
     </Layout>,
   );

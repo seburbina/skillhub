@@ -26,6 +26,7 @@ export const Layout: FC<LayoutProps> = ({ title, description, children }) => (
       />
       <meta property="og:url" content="https://agentskilldepot.com" />
       <link rel="stylesheet" href="/globals.css" />
+      <script src="/app.js" defer></script>
     </head>
     <body>
       <header class="site-header">
