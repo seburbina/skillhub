@@ -7,12 +7,13 @@ import {
   skillVersions,
   skills as skillsTable,
 } from "@/db/schema";
+import { writeAudit } from "@/lib/audit";
 import { requireAgent, getAgent } from "@/lib/auth";
 import { isNewUnverifiedAgent } from "@/lib/challenge";
 import { embed, toVectorLiteral } from "@/lib/embeddings";
 import { clientIp, errorResponse } from "@/lib/http";
 import { signedDownloadUrl } from "@/lib/r2";
-import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
 import { visibleSkillsPredicate } from "@/lib/visibility";
 import type { Env } from "@/types";
 
@@ -33,7 +34,7 @@ skills.get("/search", async (c) => {
   const ip = clientIp(c);
   const db = makeDb(c.env);
 
-  const rl = await checkRateLimit(db, `ip:${ip}:search`, LIMITS.search);
+  const rl = await checkRateLimit(db, rateLimitKey("ip", ip, "search"), LIMITS.search);
   if (!rl.allowed) {
     return errorResponse(c, "rate_limited", "Search rate limit exceeded.", {
       retryAfterSeconds: rl.retryAfterSeconds,
@@ -124,7 +125,7 @@ skills.post("/suggest", async (c) => {
   const ip = clientIp(c);
   const db = makeDb(c.env);
 
-  const rl = await checkRateLimit(db, `ip:${ip}:search`, LIMITS.search);
+  const rl = await checkRateLimit(db, rateLimitKey("ip", ip, "search"), LIMITS.search);
   if (!rl.allowed) {
     return errorResponse(c, "rate_limited", "Search rate limit exceeded.", {
       retryAfterSeconds: rl.retryAfterSeconds,
@@ -356,6 +357,25 @@ skills.post("/:id/report", requireAgent, async (c) => {
     quarantined = true;
   }
 
+  c.executionCtx.waitUntil(
+    writeAudit(db, {
+      tenantId: reporterAgent.tenantId ?? null,
+      actorType: "agent",
+      actorId: reporterAgent.id,
+      action: quarantined ? "skill.quarantined" : "skill.reported",
+      targetType: "skill",
+      targetId: skill.id,
+      ip: clientIp(c),
+      userAgent: c.req.header("user-agent") ?? null,
+      metadata: {
+        slug: skill.slug,
+        reason,
+        distinct_reporters: reporters,
+        threshold: QUARANTINE_THRESHOLD,
+      },
+    }),
+  );
+
   return c.json({
     ok: true,
     skill_id: skill.id,
@@ -378,7 +398,7 @@ skills.get("/:id/versions/:semver/download", requireAgent, async (c) => {
 
   const rl = await checkRateLimit(
     db,
-    `agent:${agent.id}:download`,
+    rateLimitKey("agent", agent.id, "download", agent.tenantId),
     LIMITS.download,
     isNewUnverifiedAgent(agent),
   );

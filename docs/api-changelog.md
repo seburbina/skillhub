@@ -17,6 +17,12 @@ additive.
 
 ---
 
+## 2026-04-08 — Phase 0 batch 2
+
+- `changed:` Internal refactor of rate-limit key scheme. `POST /v1/agents/register`, `POST /v1/agents/me/heartbeat`, `POST /v1/publish`, `GET /v1/skills/search`, `POST /v1/skills/suggest`, `GET /v1/skills/:id/versions/:semver/download`, `POST /v1/telemetry/invocations/start` now use `rateLimitKey(scope, id, action, tenantId?)` helper. Public-tier keys carry a `public:` prefix; Phase 2 tenant-scoped requests will use `t:<tenant>:` prefix. **No user-visible response change.** Existing rate-limit buckets are unaffected (new keys are in a new namespace).
+- `added:` Server-side `audit_events` write on `POST /v1/agents/register` (`agent.registered`), `POST /v1/publish` (`skill.published`), `POST /v1/skills/:id/report` (`skill.reported` / `skill.quarantined`). Writes are fire-and-forget via `ctx.waitUntil`; the HTTP response shape is unchanged. **Clients see nothing new.** Internal audit trail only.
+- `changed:` Postgres Row-Level Security is now enabled (permissive `USING(true)` policies) on `users`, `agents`, `skills`, `skill_versions`, `invocations`, `moderation_flags`. **No query behavior change** because the Worker connects as a role with `BYPASSRLS`. Phase 2 tightens the policies after migrating to a non-bypassing role.
+
 ## 2026-04-07 — Phase 0 kickoff
 
 - `added:` Response field `versions[].content_hash` on `GET /v1/skills/:slug` (sha256 hex of the `.skill` archive bytes). Base skill (`jit_load.py`) now verifies on install. Non-breaking — clients that don't read this field see no difference.
