@@ -313,6 +313,132 @@ def _line_column(text: str, offset: int) -> tuple[int, int]:
     return line, column
 
 
+# -----------------------------------------------------------------------------
+# Anti-exfiltration block-tier parity (keep in sync with the TypeScript
+# implementation in apps/api/src/lib/scrub/exfiltration.ts).
+#
+# ONLY the block-tier detectors are ported locally — review-tier heuristics
+# (eval/subprocess/hidden-instruction phrases) live server-side so we don't
+# hammer publishers with local false positives. The server is authoritative.
+# -----------------------------------------------------------------------------
+
+_INVISIBLE_UNICODE_RX = re.compile(
+    "["
+    "\u200b-\u200f"
+    "\u202a-\u202e"
+    "\u2060-\u2064"
+    "\ufe00-\ufe0f"
+    "\ufff9-\ufffc"
+    "]"
+)
+
+_WEBHOOK_SINK_PATTERNS = [
+    (re.compile(r"discord(?:app)?\.com/api/webhooks", re.I), "discord_webhook"),
+    (re.compile(r"\bwebhook\.site\b", re.I), "webhook_site"),
+    (re.compile(r"\brequestbin\b", re.I), "requestbin"),
+    (re.compile(r"\bpipedream\.net\b", re.I), "pipedream"),
+    (re.compile(r"\bngrok\.(?:io|app|dev)\b", re.I), "ngrok_tunnel"),
+    (re.compile(r"\btrycloudflare\.com\b", re.I), "cloudflare_tunnel"),
+    (re.compile(r"\blocaltunnel\.me\b", re.I), "localtunnel"),
+    (re.compile(r"\bserveo\.net\b", re.I), "serveo_tunnel"),
+    (re.compile(r"\bburpcollaborator\.net\b", re.I), "burp_collaborator"),
+    (re.compile(r"\bcanarytokens\.com\b", re.I), "canarytokens"),
+    (re.compile(r"\bdnslog\.cn\b", re.I), "dnslog"),
+    (re.compile(r"\b[a-z0-9.-]+\.onion\b", re.I), "onion_address"),
+]
+
+_CURL_PIPE_SHELL_PATTERNS = [
+    re.compile(r"\bcurl\b[^\n|&;]{0,200}\|\s*(?:sh|bash|zsh|ksh|dash)\b", re.I),
+    re.compile(r"\bwget\b[^\n|&;]{0,200}\|\s*(?:sh|bash|zsh|ksh|dash)\b", re.I),
+    re.compile(r"\$\(\s*curl\b[^)]{0,200}\)", re.I),
+    re.compile(r"\$\(\s*wget\b[^)]{0,200}\)", re.I),
+]
+
+_BASE64_CHUNK_RX = re.compile(r"[A-Za-z0-9+/]{120,}={0,2}")
+
+
+def _detect_exfiltration_block(
+    text: str,
+    rel_path: str,
+    findings: list[Finding],
+) -> None:
+    """Append block-tier anti-exfiltration findings. Does not modify text."""
+    # Invisible / zero-width / tag characters
+    for m in _INVISIBLE_UNICODE_RX.finditer(text):
+        line, col = _line_column(text, m.start())
+        cp = f"U+{ord(m.group(0)):04X}"
+        findings.append(Finding(
+            file=rel_path, line=line, column=col,
+            rule="invisible_unicode", severity="block",
+            snippet=f"invisible char {cp}",
+            replacement="(remove)",
+        ))
+
+    # Explicit exfiltration sinks
+    for rx, label in _WEBHOOK_SINK_PATTERNS:
+        for m in rx.finditer(text):
+            line, col = _line_column(text, m.start())
+            findings.append(Finding(
+                file=rel_path, line=line, column=col,
+                rule=f"webhook_sink:{label}", severity="block",
+                snippet=_truncate(m.group(0)),
+                replacement="(remove)",
+            ))
+
+    # curl | sh  /  wget | bash
+    for rx in _CURL_PIPE_SHELL_PATTERNS:
+        for m in rx.finditer(text):
+            line, col = _line_column(text, m.start())
+            findings.append(Finding(
+                file=rel_path, line=line, column=col,
+                rule="curl_pipe_shell", severity="block",
+                snippet=_truncate(m.group(0)),
+                replacement="(remove)",
+            ))
+
+    # Base64 single-decode pass — re-scan block patterns on decoded bytes.
+    import base64
+    for m in _BASE64_CHUNK_RX.finditer(text):
+        raw = m.group(0)
+        try:
+            decoded_bytes = base64.b64decode(raw, validate=False)
+            decoded = decoded_bytes.decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            continue
+        # "mostly printable" check
+        printable = sum(
+            1 for ch in decoded
+            if (32 <= ord(ch) < 127) or ch in "\t\n\r"
+        )
+        if not decoded or printable / len(decoded) < 0.85:
+            continue
+        # Re-run the block detectors on the decoded content
+        line, col = _line_column(text, m.start())
+        if _INVISIBLE_UNICODE_RX.search(decoded):
+            findings.append(Finding(
+                file=rel_path, line=line, column=col,
+                rule="invisible_unicode_in_base64", severity="block",
+                snippet="base64 decodes to invisible-unicode content",
+                replacement="(remove)",
+            ))
+        for rx, label in _WEBHOOK_SINK_PATTERNS:
+            if rx.search(decoded):
+                findings.append(Finding(
+                    file=rel_path, line=line, column=col,
+                    rule=f"webhook_sink_in_base64:{label}", severity="block",
+                    snippet=f"base64 decodes to {label}",
+                    replacement="(remove)",
+                ))
+        for rx in _CURL_PIPE_SHELL_PATTERNS:
+            if rx.search(decoded):
+                findings.append(Finding(
+                    file=rel_path, line=line, column=col,
+                    rule="curl_pipe_shell_in_base64", severity="block",
+                    snippet="base64 decodes to curl|sh command",
+                    replacement="(remove)",
+                ))
+
+
 def _apply_rules(
     text: str,
     rel_path: str,
@@ -347,6 +473,11 @@ def _apply_rules(
             ))
             return repl
         text = rule.pattern.sub(_sub, text)
+
+    # 3) Block-tier anti-exfiltration parity (invisible Unicode, webhook
+    #    sinks, curl|sh, base64-decodes-to-block). The review-tier heuristics
+    #    run only server-side — see apps/api/src/lib/scrub/exfiltration.ts.
+    _detect_exfiltration_block(text, rel_path, findings)
 
     return text
 

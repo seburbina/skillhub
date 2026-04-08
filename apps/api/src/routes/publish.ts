@@ -10,6 +10,8 @@ import { errorResponse } from "@/lib/http";
 import { putSkill, skillVersionKey } from "@/lib/r2";
 import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
 import { scanSkill } from "@/lib/scrub/regex";
+import { detectExfiltration, worstOf } from "@/lib/scrub/exfiltration";
+import { classifyWithLLM } from "@/lib/scrub/exfiltration-llm";
 import { textFilesFromZip } from "@/lib/unzip";
 import type { Env } from "@/types";
 
@@ -172,6 +174,88 @@ publish.post("/", async (c) => {
     );
   }
 
+  // ---------------------------------------------------------------------
+  // Anti-exfiltration filter
+  //
+  // Protects the *downstream session* from a rogue skill. Runs after the
+  // publisher-focused scrub above. Has two authoritative tiers:
+  //
+  //   block  → reject outright (invisible Unicode, webhook sinks, curl|sh,
+  //            base64-decodes-to-block)
+  //   review → accept the upload but hold the version in review_status
+  //            'pending' so it is invisible to search/download until a
+  //            human moderator clears it via docs/review-queue-runbook.md.
+  //
+  // Scans both the extracted file contents AND the manifest text fields,
+  // since the latter are fed into embeddings and rendered on public pages
+  // without any other content validation.
+  // ---------------------------------------------------------------------
+  const manifestAsFile = {
+    path: "(manifest)",
+    content: [
+      manifest.display_name,
+      manifest.short_desc,
+      manifest.long_desc_md ?? "",
+      (manifest.tags ?? []).join(" "),
+      manifest.category ?? "",
+      manifest.changelog_md ?? "",
+    ]
+      .filter((s) => s.length > 0)
+      .join("\n\n"),
+  };
+
+  const manifestScrub = scanSkill([manifestAsFile]);
+  if (manifestScrub.overallSeverity === "block") {
+    return errorResponse(
+      c,
+      "block_finding",
+      "Manifest text contains content flagged by the regex scrub.",
+      { findings: manifestScrub.findings },
+    );
+  }
+
+  const exfilResult = detectExfiltration(textFiles);
+  const manifestExfil = detectExfiltration([manifestAsFile]);
+  // LLM classifier — stub today, returns [] unless EXFIL_LLM_ENABLED=true.
+  const llmFindings = await classifyWithLLM(
+    [...textFiles, manifestAsFile],
+    c.env,
+  );
+  const llmResult = {
+    overallSeverity:
+      llmFindings.find((f) => f.severity === "block")
+        ? ("block" as const)
+        : llmFindings.find((f) => f.severity === "review")
+          ? ("review" as const)
+          : llmFindings.find((f) => f.severity === "warn")
+            ? ("warn" as const)
+            : ("clean" as const),
+    findings: llmFindings,
+  };
+
+  const exfilSeverity = worstOf(exfilResult, manifestExfil, llmResult);
+  const mergedExfilFindings = [
+    ...exfilResult.findings,
+    ...manifestExfil.findings,
+    ...llmResult.findings,
+  ];
+
+  if (exfilSeverity === "block") {
+    return errorResponse(
+      c,
+      "block_finding",
+      "Skill blocked by anti-exfiltration filter.",
+      {
+        findings: mergedExfilFindings.filter((f) => f.severity === "block"),
+        hint:
+          "See base-skill/skillhub/references/scrubbing.md § Exfiltration defenses.",
+      },
+    );
+  }
+
+  const reviewStatus: "approved" | "pending" =
+    exfilSeverity === "review" ? "pending" : "approved";
+
   // Upload to R2
   const r2Key = skillVersionKey(manifest.slug, manifest.semver);
   try {
@@ -214,13 +298,28 @@ publish.post("/", async (c) => {
     skillId = created.id;
   }
 
-  // Scrub report
+  // Scrub report — store the exfiltration findings alongside the regex ones
+  // in the existing `llm_findings` JSONB column. The column is historically
+  // named for the client-side LLM review (which this codepath does not run
+  // server-side), so reusing it for the exfiltration-filter findings avoids
+  // a schema change. Each finding carries its own `tier` field
+  // ("rule" | "llm") so downstream tooling can tell them apart.
   const [scrubRow] = await db
     .insert(scrubReports)
     .values({
       regexFindings: clientScrub.findings,
       serverRescanFindings: serverScan.findings,
-      status: serverScan.overallSeverity === "warn" ? "warn" : "clean",
+      llmFindings: mergedExfilFindings,
+      // `scrub_status` enum is clean|warn|block and can't represent "review".
+      // Use "warn" for review-tier holds so the column stays within its
+      // existing domain; the authoritative review state lives on
+      // skill_versions.review_status.
+      status:
+        reviewStatus === "pending"
+          ? "warn"
+          : serverScan.overallSeverity === "warn"
+            ? "warn"
+            : "clean",
       reviewedByUser: true,
     })
     .returning();
@@ -255,33 +354,50 @@ publish.post("/", async (c) => {
       r2Key,
       changelogMd: manifest.changelog_md ?? null,
       scrubReportId: scrubRow?.id ?? null,
+      reviewStatus,
+      reviewNotes:
+        reviewStatus === "pending"
+          ? `Held by anti-exfiltration filter. ${mergedExfilFindings
+              .filter((f) => f.severity === "review")
+              .length} review-tier finding(s). See scrub_reports.llm_findings.`
+          : null,
     })
     .returning();
   if (!newVersion) {
     return errorResponse(c, "server_error", "Failed to create version row.");
   }
 
-  await db
-    .update(skills)
-    .set({
-      currentVersionId: newVersion.id,
-      displayName: manifest.display_name,
-      shortDesc: manifest.short_desc,
-      longDescMd: manifest.long_desc_md ?? null,
-      category: manifest.category ?? null,
-      tags: manifest.tags,
-      updatedAt: new Date(),
-    })
-    .where(eq(skills.id, skillId));
+  // Only promote the skill row (currentVersionId, display metadata) when the
+  // new version is approved. Pending versions land in the DB and R2 but must
+  // stay invisible until a moderator clears them, so we do NOT overwrite the
+  // public-facing fields on `skills`.
+  if (reviewStatus === "approved") {
+    await db
+      .update(skills)
+      .set({
+        currentVersionId: newVersion.id,
+        displayName: manifest.display_name,
+        shortDesc: manifest.short_desc,
+        longDescMd: manifest.long_desc_md ?? null,
+        category: manifest.category ?? null,
+        tags: manifest.tags,
+        updatedAt: new Date(),
+      })
+      .where(eq(skills.id, skillId));
 
-  // Fire-and-forget: embed the skill for semantic search in the background
-  // via Cloudflare's executionCtx.waitUntil. The HTTP response goes back
-  // immediately; the embedding completes after.
-  c.executionCtx.waitUntil(
-    embedSkill(c.env, skillId)
-      .then((r) => console.log("[publish.embedSkill]", r))
-      .catch((e) => console.warn("[publish.embedSkill] failed", e)),
-  );
+    // Fire-and-forget: embed the skill for semantic search in the background
+    // via Cloudflare's executionCtx.waitUntil. Skipped for pending versions
+    // — re-embedding runs when the moderator approves.
+    c.executionCtx.waitUntil(
+      embedSkill(c.env, skillId)
+        .then((r) => console.log("[publish.embedSkill]", r))
+        .catch((e) => console.warn("[publish.embedSkill] failed", e)),
+    );
+  } else {
+    console.log(
+      `[publish] version ${newVersion.id} held for review (${mergedExfilFindings.filter((f) => f.severity === "review").length} findings)`,
+    );
+  }
 
   return c.json({
     skill_id: skillId,
@@ -291,6 +407,11 @@ publish.post("/", async (c) => {
     public_url: `${c.env.APP_URL}/s/${manifest.slug}`,
     r2_key: r2Key,
     published_at: newVersion.publishedAt.toISOString(),
+    review_status: reviewStatus,
+    review_findings:
+      reviewStatus === "pending"
+        ? mergedExfilFindings.filter((f) => f.severity === "review")
+        : undefined,
   });
 });
 

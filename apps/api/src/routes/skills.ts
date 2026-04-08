@@ -87,6 +87,11 @@ skills.get("/search", async (c) => {
     FROM skills
     WHERE deleted_at IS NULL
       AND visibility IN ('public_free', 'public_paid')
+      -- Anti-exfiltration filter: only surface skills whose current
+      -- version has cleared review. current_version_id is only set by
+      -- publish.ts when reviewStatus='approved', so a held-for-review
+      -- first publish leaves it NULL.
+      AND current_version_id IS NOT NULL
       ${categoryFilter}
       ${queryEmbedding ? sql`` : sql` AND (display_name ILIKE ${`%${q}%`} OR short_desc ILIKE ${`%${q}%`})`}
     ORDER BY ${orderBy}
@@ -164,6 +169,7 @@ skills.post("/suggest", async (c) => {
     FROM skills
     WHERE deleted_at IS NULL
       AND visibility IN ('public_free', 'public_paid')
+      AND current_version_id IS NOT NULL
       ${queryEmbedding ? sql`` : sql` AND (display_name ILIKE ${`%${intent}%`} OR short_desc ILIKE ${`%${intent}%`})`}
     ORDER BY ${orderBy}
     LIMIT ${limit}
@@ -205,6 +211,10 @@ skills.get("/:slug", async (c) => {
     return errorResponse(c, "not_found", `No skill with slug '${slug}'.`);
   }
 
+  // Only approved versions are visible in the public profile. Pending /
+  // rejected versions (held by the anti-exfiltration filter) must not leak
+  // through this endpoint — they stay visible only to the author via the
+  // authenticated "my skills" surface.
   const versions = await db
     .select({
       id: skillVersions.id,
@@ -216,8 +226,19 @@ skills.get("/:slug", async (c) => {
       changelogMd: skillVersions.changelogMd,
     })
     .from(skillVersions)
-    .where(eq(skillVersions.skillId, skill.id))
+    .where(
+      and(
+        eq(skillVersions.skillId, skill.id),
+        eq(skillVersions.reviewStatus, "approved"),
+      ),
+    )
     .orderBy(desc(skillVersions.publishedAt));
+
+  // If every version is still pending/rejected the skill is effectively
+  // not-yet-published from the public's perspective.
+  if (versions.length === 0) {
+    return errorResponse(c, "not_found", `No skill with slug '${slug}'.`);
+  }
 
   const latest = versions.find((v) => !v.yankedAt && !v.deprecatedAt);
 
@@ -417,6 +438,17 @@ skills.get("/:id/versions/:semver/download", requireAgent, async (c) => {
   }
   if (version.yankedAt) {
     return errorResponse(c, "forbidden", `Version ${semver} has been yanked.`);
+  }
+  // Anti-exfiltration review hold — download is blocked for any version
+  // not in review_status='approved'. Authors using the authenticated
+  // "my skills" surface see their own pending versions with the findings
+  // attached; the download endpoint itself stays strict.
+  if (version.reviewStatus !== "approved") {
+    return errorResponse(
+      c,
+      "forbidden",
+      `Version ${semver} is under review and not yet available for download.`,
+    );
   }
 
   await db

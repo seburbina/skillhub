@@ -17,6 +17,13 @@ export interface Bindings {
   VOYAGE_MODEL: string;
   ENVIRONMENT: string;
   SIGNED_URL_TTL: string;
+  // Feature flag for the anti-exfiltration LLM classifier stage. "true"
+  // enables apps/api/src/lib/scrub/exfiltration-llm.ts; any other value
+  // leaves it disabled (the rule-based pass still runs).
+  EXFIL_LLM_ENABLED?: string;
+  // Only read when EXFIL_LLM_ENABLED === "true". Set via
+  // `wrangler secret put ANTHROPIC_API_KEY` before flipping the flag.
+  ANTHROPIC_API_KEY?: string;
 
   // ── Secrets (from `wrangler secret put`) ──────────────────────────────
   DATABASE_URL: string;

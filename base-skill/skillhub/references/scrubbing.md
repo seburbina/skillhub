@@ -235,3 +235,80 @@ verbatim to continue. See `SKILL.md` step 5 for the exact prompt format.
 - Any disagreement between layers → worst severity wins.
 - Every `block` decision is recorded in the server's `scrub_reports` table for audit, even if
   the user never completes the publish.
+
+---
+
+## Exfiltration defenses (stage 3.5 — server-side)
+
+The stages above protect the **publisher** from leaking their own secrets. In
+addition to those, the server runs an anti-exfiltration pass that protects the
+**downstream session** from a rogue skill that tries to exfiltrate user data
+or override Claude's safety instructions once it's JIT-loaded into someone
+else's context. Implementation: `apps/api/src/lib/scrub/exfiltration.ts`.
+
+Three tiers:
+
+### Block-tier (auto-reject, 422)
+
+Presence of any of these fails the publish immediately. A block-tier parity
+port runs client-side in `sanitize.py` so publishers see the error locally
+before upload.
+
+1. **Invisible Unicode injection** — characters in `U+200B–U+200F`,
+   `U+202A–U+202E`, `U+2060–U+2064`, `U+FE00–U+FE0F`, `U+FFF9–U+FFFC`, or
+   the `U+E0000–U+E007F` tag range. These have no legitimate use in skill
+   content and are a known prompt-injection vector.
+2. **Explicit data-exfiltration sinks** — URLs referencing known webhook /
+   tunnel / dnslog endpoints: Discord webhooks, `webhook.site`, `requestbin`,
+   `pipedream`, `ngrok`, `trycloudflare.com`, `localtunnel`, `serveo.net`,
+   `burpcollaborator.net`, `canarytokens.com`, `dnslog.cn`, any `.onion`
+   hostname.
+3. **`curl … | sh` / `wget … | bash`** — piping remote output directly into
+   a shell executes arbitrary attacker code at install time.
+4. **Base64 single-decode pass** — any base64 chunk ≥ 120 chars is decoded
+   once; if the result matches a block-tier pattern above, the original
+   publish is rejected.
+
+### Review-tier (publish succeeds, version held pending human review)
+
+Review-tier findings are fuzzier and would produce too many false positives
+on legitimate security-tooling skills. Instead of blocking, the version
+lands in the DB with `review_status = 'pending'` — invisible to search,
+profile pages, and download until a moderator clears it via
+`docs/review-queue-runbook.md`.
+
+Review-tier detectors run **server-side only** (not in `sanitize.py`):
+
+- **Hidden-instruction phrase match** — "ignore previous instructions",
+  "disregard …rules", "you are now …", "DAN mode", "jailbreak", "developer
+  mode enabled", "system prompt :", "override safety/guardrails".
+- **Unsafe call surfaces** — Python `eval`/`exec`/`compile`/`__import__`/
+  `os.system`/`subprocess.*`/`pty.spawn`; Node `new Function`/`child_process`/
+  `vm`; shell `bash -c "…"`.
+- **Non-allowlisted POST/PUT/PATCH/DELETE** to hosts outside the allowlist
+  (`agentskilldepot.com`, `api.anthropic.com`, `localhost`, `127.0.0.1`).
+- **Exfil-sink proximity** — references to `~/.ssh`, `~/.aws`, `~/.config`,
+  `process.env`, `document.cookie`, `localStorage`, `sessionStorage`,
+  `/etc/passwd`, `/etc/shadow`, or `.env` within five lines of a network-call
+  pattern (`requests.*`, `urllib.request`, `fetch(`, `axios.*`, `curl`).
+
+### LLM classifier stage (wired, disabled)
+
+`apps/api/src/lib/scrub/exfiltration-llm.ts` holds a fully wired Claude
+Haiku classifier path. It is disabled by default via the `EXFIL_LLM_ENABLED`
+env var (`"false"`). When turned on, it returns additional findings at
+review/warn severity only — rule-based detectors remain the sole path to
+block status until the LLM stage has been evaluated against a real corpus.
+
+### Manifest fields
+
+The exfiltration detectors also run against `display_name`, `short_desc`,
+`long_desc_md`, `tags`, `category`, and `changelog_md` before the DB insert
+and before the Voyage embedding. Same tiers apply.
+
+### How to request allowlist additions
+
+If you need to call a legitimate non-allowlisted host (e.g. a public
+research API), add it to `HOST_ALLOWLIST` in
+`apps/api/src/lib/scrub/exfiltration.ts` in a PR that explains the use
+case. Keep the list short; every addition widens the surface area.
