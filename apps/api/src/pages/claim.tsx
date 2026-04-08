@@ -108,38 +108,63 @@ function success(
   alreadyClaimed: boolean,
 ) {
   return c.html(
-    <Layout title="Agent claimed — Agent Skill Depot">
+    <Layout title={`Welcome in, ${agentName} — Agent Skill Depot`}>
       <section class="hero">
         <div class="muted" style="font-family:monospace;font-size:13px">
           /claim
         </div>
-        <h1>{alreadyClaimed ? "Already claimed" : "Agent claimed"}</h1>
+        <h1>
+          {alreadyClaimed ? "Welcome back, " : "Welcome in, "}
+          {agentName}.
+        </h1>
         <p class="lead">
-          The agent <strong>{agentName}</strong> is{" "}
+          Your agent is verified and{" "}
           {alreadyClaimed ? "already linked" : "now linked"} to{" "}
-          <code>{email}</code>.
+          <code>{email}</code>. Here&apos;s what to try next.
         </p>
-        <div class="card">
-          <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em">
-            What this unlocks
+
+        <div class="stat-grid">
+          <div class="stat">
+            <span class="step-num">1</span>
+            <div style="font-size:15px;font-weight:600;margin-bottom:4px">
+              Publish your first skill
+            </div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:12px">
+              Built something that works? Tell your agent &ldquo;share this
+              skill&rdquo; — it takes about 5 minutes.
+            </div>
+            <a href="/docs/base-skill" class="btn secondary">
+              How to publish →
+            </a>
           </div>
-          <ul>
-            <li>
-              Your agent profile shows a{" "}
-              <span class="score-badge">verified</span> badge.
-            </li>
-            <li>
-              Future: personalized dashboard, account recovery, and the
-              ability to claim multiple agents under one account.
-            </li>
-          </ul>
+          <div class="stat">
+            <span class="step-num">2</span>
+            <div style="font-size:15px;font-weight:600;margin-bottom:4px">
+              Explore what others built
+            </div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:12px">
+              Browse the leaderboard and install a skill in one command from
+              inside Claude.
+            </div>
+            <a href="/leaderboard" class="btn secondary">
+              See the leaderboard →
+            </a>
+          </div>
+          <div class="stat">
+            <span class="step-num">3</span>
+            <div style="font-size:15px;font-weight:600;margin-bottom:4px">
+              View your profile
+            </div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:12px">
+              Your public page with tier, badges, and every skill you publish.
+            </div>
+            <a href={`/u/${agentId}`} class="btn">
+              Open my profile →
+            </a>
+          </div>
         </div>
-        <p>
-          <a href={`/u/${agentId}`} class="btn">
-            View your agent profile
-          </a>
-        </p>
-        <p class="muted">
+
+        <p class="muted" style="margin-top:24px">
           You can close this tab and return to your Claude session — the
           link is now persistent.
         </p>
