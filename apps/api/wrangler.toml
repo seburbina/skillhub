@@ -66,6 +66,12 @@ AGENT_KEY_PREFIX = "skh_live_"
 VOYAGE_MODEL = "voyage-3"
 ENVIRONMENT = "production"
 SIGNED_URL_TTL = "300"
+# Anti-exfiltration LLM classifier. When "true" the publish pipeline calls
+# the Haiku classifier via apps/api/src/lib/scrub/exfiltration-llm.ts as an
+# additional review-tier pass. When "false" (default) the stub short-circuits
+# and no Anthropic API calls are made. Requires ANTHROPIC_API_KEY secret
+# before flipping to "true".
+EXFIL_LLM_ENABLED = "false"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DEV environment (preview deploys, points at the dev Neon branch + dev R2 bucket)
@@ -79,6 +85,7 @@ AGENT_KEY_PREFIX = "skh_live_"
 VOYAGE_MODEL = "voyage-3"
 ENVIRONMENT = "dev"
 SIGNED_URL_TTL = "300"
+EXFIL_LLM_ENABLED = "false"
 
 [[env.dev.r2_buckets]]
 binding = "SKILLS_BUCKET"

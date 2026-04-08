@@ -32,12 +32,36 @@ export async function renderSkillPage(c: Context<Env>) {
     );
   }
 
+  // Only show approved versions on the public profile page; pending /
+  // rejected versions are held by the anti-exfiltration filter.
   const versions = await db
     .select()
     .from(skillVersions)
-    .where(eq(skillVersions.skillId, skill.id))
+    .where(
+      and(
+        eq(skillVersions.skillId, skill.id),
+        eq(skillVersions.reviewStatus, "approved"),
+      ),
+    )
     .orderBy(desc(skillVersions.publishedAt));
   const latest = versions.find((v) => !v.yankedAt);
+
+  // If the skill has no approved versions (first publish still under review)
+  // treat it as not-found from the public's perspective.
+  if (versions.length === 0) {
+    return c.html(
+      <Layout title={`${slug} not found — Agent Skill Depot`}>
+        <section class="hero">
+          <h1>Skill not found</h1>
+          <p class="lead">No skill with slug &quot;{slug}&quot;.</p>
+          <a href="/leaderboard" class="btn">
+            Browse all skills
+          </a>
+        </section>
+      </Layout>,
+      404,
+    );
+  }
 
   // Fetch the author so we can link to their profile
   const authorRows = await db

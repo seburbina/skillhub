@@ -88,6 +88,26 @@ export const scrubStatusEnum = pgEnum("scrub_status", [
   "block",
 ]);
 
+/**
+ * Anti-exfiltration review status for a published skill version.
+ *
+ *   - "approved" (default) — version is publicly installable.
+ *   - "pending"            — the exfiltration filter flagged a review-tier
+ *                            finding. Version is invisible to search/download
+ *                            until a human moderator approves or rejects it.
+ *   - "rejected"           — moderator rejected after review. Same visibility
+ *                            as "pending" — publisher sees it with notes but
+ *                            public cannot install.
+ *
+ * See `apps/api/src/lib/scrub/exfiltration.ts` for the detectors that set
+ * this, and `docs/review-queue-runbook.md` for the moderator SQL.
+ */
+export const reviewStatusEnum = pgEnum("review_status", [
+  "approved",
+  "pending",
+  "rejected",
+]);
+
 export const moderationStatusEnum = pgEnum("moderation_status", [
   "open",
   "reviewing",
@@ -266,6 +286,10 @@ export const skillVersions = pgTable(
       .defaultNow(),
     deprecatedAt: timestamp("deprecated_at", { withTimezone: true }),
     yankedAt: timestamp("yanked_at", { withTimezone: true }),
+    // Anti-exfiltration review queue. Non-"approved" versions are hidden
+    // from public read paths; see reviewStatusEnum above.
+    reviewStatus: reviewStatusEnum("review_status").notNull().default("approved"),
+    reviewNotes: text("review_notes"),
   },
   (t) => ({
     skillSemverUnq: unique("skill_versions_skill_semver_unq").on(
