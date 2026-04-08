@@ -41,7 +41,40 @@ except ImportError:
     from identity import load_identity, _validate_base_url, DEFAULT_BASE_URL
 
 VERSION = "0.0.1"
-QUEUE_DIR = Path.home() / ".claude" / "skills" / "skillhub" / ".queue"
+SKILL_ROOT = Path.home() / ".claude" / "skills" / "skillhub"
+QUEUE_DIR = SKILL_ROOT / ".queue"
+STATE_PATH = SKILL_ROOT / ".session_state.json"
+
+
+def _load_challenge_header() -> str | None:
+    """Return `<token>:<answer>` if a fresh heartbeat challenge is cached.
+
+    New unverified agents (<24h old, no owner) need this on /v1/publish.
+    Verified agents are unaffected — the server only checks the header
+    when isNewUnverifiedAgent() is true.
+    """
+    try:
+        with STATE_PATH.open("r", encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    ch = state.get("challenge") if isinstance(state, dict) else None
+    if not isinstance(ch, dict):
+        return None
+    token = ch.get("token")
+    answer = ch.get("answer")
+    expires_at = ch.get("expires_at")
+    if not isinstance(token, str) or not isinstance(expires_at, str):
+        return None
+    if not isinstance(answer, (int, float)):
+        return None
+    try:
+        exp = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if datetime.now(timezone.utc) >= exp:
+        return None
+    return f"{token}:{int(answer)}"
 
 
 # -----------------------------------------------------------------------------
@@ -134,6 +167,9 @@ def publish(
         "Content-Length": str(len(body)),
         "User-Agent": f"skillhub-base-skill/{VERSION}",
     }
+    challenge_header = _load_challenge_header()
+    if challenge_header:
+        headers["X-Skillhub-Challenge"] = challenge_header
 
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):

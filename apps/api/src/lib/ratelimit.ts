@@ -64,3 +64,37 @@ export const LIMITS = {
   download:  { windowSeconds: 86400, max: 200 },
   telemetry: { windowSeconds: 3600,  max: 1000 },
 } as const satisfies Record<string, RateLimitConfig>;
+
+// ---------------------------------------------------------------------------
+// Rate-limit key scheme (Phase 0 §0.14)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a rate-limit bucket key with tenant dimension included.
+ *
+ * Key shape:
+ *   public tier     → `public:<scope>:<id>:<action>`
+ *   tenant-scoped   → `t:<tenant_id>:<scope>:<id>:<action>`
+ *
+ * `scope` is the subject type (`agent`, `ip`, `user`, `tenant`).
+ * `id` is the subject's identifier.
+ * `action` is the thing being limited (`publish`, `search`, …).
+ *
+ * Phase 0 callers pass `tenantId: null` for everything — the keys
+ * come out as `public:agent:<id>:publish`. When Phase 2 tenants land,
+ * the exact same callsites flip to `t:<uuid>:agent:<id>:publish`
+ * simply by passing the tenant id — no key-migration script needed
+ * because the new keys are in a different namespace and the
+ * public-tier keys keep working for the public tier.
+ */
+export function rateLimitKey(
+  scope: "agent" | "ip" | "user" | "tenant",
+  id: string,
+  action: string,
+  tenantId?: string | null,
+): string {
+  if (tenantId) {
+    return `t:${tenantId}:${scope}:${id}:${action}`;
+  }
+  return `public:${scope}:${id}:${action}`;
+}

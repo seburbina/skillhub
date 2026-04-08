@@ -18,6 +18,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -59,31 +60,69 @@ def _get(base_url: str, path: str, api_key: str, follow_redirects: bool = True) 
 
 
 def _resolve_and_download(base_url: str, api_key: str, slug: str, version: str | None) -> tuple[Path, str, str]:
-    """Resolve the skill version and download the .skill ZIP.
+    """Resolve the skill version, download the .skill ZIP, verify content hash.
+
+    Phase 0 §0.18 — every install verifies the server-published SHA-256 of
+    the .skill bytes against a locally-computed hash. Refuses installation
+    on mismatch. This is a belt-and-suspenders defense against R2 corruption,
+    MITM, or (more practically) accidental bucket-level tampering.
 
     Returns (zip_path, skill_id, resolved_semver).
     """
-    # Resolve latest version if not specified
+    # Always fetch metadata — we need the content_hash even if the caller
+    # supplied an explicit version.
+    meta_bytes = _get(base_url, f"/v1/skills/{slug}", api_key)
+    try:
+        meta = json.loads(meta_bytes.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"bad metadata response for {slug}: {e}") from e
+
+    skill_id = meta.get("skill_id")
+    if not skill_id:
+        raise RuntimeError(f"metadata for {slug} missing skill_id")
+
     if version is None:
-        meta = _get(base_url, f"/v1/skills/{slug}", api_key)
-        try:
-            parsed = json.loads(meta.decode("utf-8"))
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"bad metadata response for {slug}: {e}") from e
-        version = parsed.get("latest_version") or parsed.get("current_version")
-        skill_id = parsed.get("skill_id")
-        if not version or not skill_id:
+        version = meta.get("latest_version") or meta.get("current_version")
+        if not version:
             raise RuntimeError(f"could not resolve latest version for {slug}")
-    else:
-        skill_id = None  # will be derived from download response headers if needed
+
+    # Look up the expected content hash for the resolved version
+    expected_hash = None
+    for v in meta.get("versions", []):
+        if v.get("semver") == version:
+            expected_hash = v.get("content_hash")
+            break
+    if not expected_hash:
+        # Server may be on an older deploy — warn but proceed (Phase 0 grace
+        # period; Phase 2 tightens to hard refusal when every server we
+        # talk to is guaranteed to emit content_hash).
+        print(
+            f"warning: server did not return content_hash for {slug} v{version}; "
+            f"skipping integrity verification",
+            file=sys.stderr,
+        )
 
     # Download the .skill
     path = f"/v1/skills/by-slug/{slug}/versions/{version}/download"
     content = _get(base_url, path, api_key)
+
+    # Verify content hash BEFORE writing to disk — refuse to materialize a
+    # tampered file even momentarily.
+    if expected_hash:
+        actual_hash = hashlib.sha256(content).hexdigest()
+        if actual_hash != expected_hash:
+            raise RuntimeError(
+                f"content hash mismatch for {slug} v{version}: "
+                f"expected {expected_hash}, got {actual_hash}. "
+                f"Refusing to install. This may indicate R2 corruption, "
+                f"MITM, or bucket tampering."
+            )
+        print(f"content verified: sha256:{actual_hash[:16]}...", file=sys.stderr)
+
     tmp = tempfile.NamedTemporaryFile(suffix=".skill", delete=False)
     tmp.write(content)
     tmp.close()
-    return Path(tmp.name), (skill_id or slug), version
+    return Path(tmp.name), skill_id, version
 
 
 def _unzip_skill(zip_path: Path, target_dir: Path) -> None:

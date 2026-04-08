@@ -6,7 +6,7 @@ import { invocations, ratings, skills } from "@/db/schema";
 import { getAgent, requireAgent } from "@/lib/auth";
 import { isNewUnverifiedAgent } from "@/lib/challenge";
 import { errorResponse } from "@/lib/http";
-import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
 import type { Env } from "@/types";
 
 export const telemetry = new Hono<Env>();
@@ -127,7 +127,7 @@ telemetry.post("/invocations/start", async (c) => {
 
   const rl = await checkRateLimit(
     db,
-    `agent:${agent.id}:telemetry`,
+    rateLimitKey("agent", agent.id, "telemetry", agent.tenantId),
     LIMITS.telemetry,
     isNewUnverifiedAgent(agent),
   );

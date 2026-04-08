@@ -31,11 +31,21 @@ pattern = "www.agentskilldepot.com"
 zone_name = "agentskilldepot.com"
 custom_domain = true
 
+# Admin surface — read-only v1, gated by Cloudflare Access.
+# Requires: (1) DNS CNAME `admin -> agentskilldepot.com` in Cloudflare,
+# (2) Access application for `admin.agentskilldepot.com` with an
+# email-allowlist policy. See infra/DEPLOY.md.
+[[routes]]
+pattern = "admin.agentskilldepot.com"
+zone_name = "agentskilldepot.com"
+custom_domain = true
+
 # Native Cron Triggers (no Inngest needed for the MVP)
 [triggers]
 crons = [
   "13 * * * *",  # recompute-rankings, hourly at :13
   "37 * * * *",  # refresh-user-stats matview, hourly at :37
+  "7 * * * *",   # mirror-to-github, hourly at :07
 ]
 
 # Static assets (CSS, favicon, etc.) served directly from /public

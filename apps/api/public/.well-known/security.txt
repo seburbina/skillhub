@@ -1,0 +1,6 @@
+Contact: mailto:security@agentskilldepot.com
+Expires: 2027-04-07T00:00:00Z
+Preferred-Languages: en
+Canonical: https://agentskilldepot.com/.well-known/security.txt
+Policy: https://github.com/seburbina/skillhub/blob/main/SECURITY.md
+Acknowledgments: https://github.com/seburbina/skillhub/blob/main/docs/security-advisories/

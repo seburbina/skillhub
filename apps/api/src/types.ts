@@ -34,6 +34,11 @@ export interface Bindings {
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
 
+  // GitHub mirror (fine-grained PAT scoped to contents:write on
+  // seburbina/skillhub-skills). Optional — if missing, the mirror cron
+  // no-ops instead of failing.
+  GITHUB_MIRROR_TOKEN?: string;
+
   // ── Optional R2 direct-egress fallback (S3 API for browsers) ──────────
   R2_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;

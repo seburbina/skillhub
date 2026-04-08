@@ -4,11 +4,12 @@ import { z } from "zod";
 import { makeDb } from "@/db";
 import { scrubReports, skillVersions, skills } from "@/db/schema";
 import { embedSkill } from "@/jobs/embed-skill";
+import { writeAudit } from "@/lib/audit";
 import { getAgent, requireAgent } from "@/lib/auth";
-import { isNewUnverifiedAgent } from "@/lib/challenge";
-import { errorResponse } from "@/lib/http";
+import { isNewUnverifiedAgent, verifyChallenge } from "@/lib/challenge";
+import { clientIp, errorResponse } from "@/lib/http";
 import { putSkill, skillVersionKey } from "@/lib/r2";
-import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
 import { scanSkill } from "@/lib/scrub/regex";
 import { detectExfiltration, worstOf } from "@/lib/scrub/exfiltration";
 import { classifyWithLLM } from "@/lib/scrub/exfiltration-llm";
@@ -58,7 +59,7 @@ publish.post("/", async (c) => {
   const newAgent = isNewUnverifiedAgent(agent);
   const rl = await checkRateLimit(
     db,
-    `agent:${agent.id}:publish`,
+    rateLimitKey("agent", agent.id, "publish", agent.tenantId),
     LIMITS.publish,
     newAgent,
   );
@@ -66,6 +67,44 @@ publish.post("/", async (c) => {
     return errorResponse(c, "rate_limited", "Publish rate limit exceeded.", {
       retryAfterSeconds: rl.retryAfterSeconds,
     });
+  }
+
+  // Anti-spam: new unverified agents must solve the math challenge handed
+  // out by the previous heartbeat. Verified or >24h-old agents are
+  // unaffected. Header format: `X-Skillhub-Challenge: <token>:<answer>`.
+  if (newAgent) {
+    const header = c.req.header("x-skillhub-challenge") ?? "";
+    const sepIdx = header.lastIndexOf(":");
+    if (!header || sepIdx <= 0) {
+      return errorResponse(
+        c,
+        "forbidden",
+        "New unverified agents must solve the anti-spam challenge issued by the heartbeat endpoint.",
+        {
+          hint: "Call /v1/agents/me/heartbeat first, then include `X-Skillhub-Challenge: <token>:<answer>`.",
+          details: { subcode: "challenge_required" },
+        },
+      );
+    }
+    const token = header.slice(0, sepIdx);
+    const answer = Number(header.slice(sepIdx + 1));
+    if (!Number.isFinite(answer)) {
+      return errorResponse(c, "forbidden", "Invalid challenge answer.", {
+        details: { subcode: "challenge_failed", reason: "non_numeric_answer" },
+      });
+    }
+    const verdict = await verifyChallenge(agent.id, answer, token, c.env);
+    if (!verdict.ok) {
+      return errorResponse(
+        c,
+        "forbidden",
+        `Anti-spam challenge failed: ${verdict.reason ?? "unknown"}`,
+        {
+          hint: "Request a fresh challenge via /v1/agents/me/heartbeat.",
+          details: { subcode: "challenge_failed", reason: verdict.reason },
+        },
+      );
+    }
   }
 
   // Parse multipart
@@ -398,6 +437,27 @@ publish.post("/", async (c) => {
       `[publish] version ${newVersion.id} held for review (${mergedExfilFindings.filter((f) => f.severity === "review").length} findings)`,
     );
   }
+
+  // Audit trail — fire and forget (never blocks the response).
+  c.executionCtx.waitUntil(
+    writeAudit(db, {
+      tenantId: agent.tenantId ?? null,
+      actorType: "agent",
+      actorId: agent.id,
+      action: "skill.published",
+      targetType: "skill",
+      targetId: skillId,
+      ip: clientIp(c),
+      userAgent: c.req.header("user-agent") ?? null,
+      metadata: {
+        slug: manifest.slug,
+        semver: manifest.semver,
+        version_id: newVersion.id,
+        size_bytes: zipBytes.length,
+        content_hash: contentHash,
+      },
+    }),
+  );
 
   return c.json({
     skill_id: skillId,

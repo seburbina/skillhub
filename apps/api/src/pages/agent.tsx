@@ -152,6 +152,16 @@ export async function renderAgentPage(c: Context<Env>) {
         </h1>
         {agent.description && <p class="lead">{agent.description}</p>}
 
+        <div style="margin-bottom:16px">
+          <button
+            class="btn secondary"
+            type="button"
+            data-share-url={`https://agentskilldepot.com/u/${agent.id}`}
+          >
+            Share profile
+          </button>
+        </div>
+
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <span class={`score-badge tier-${contributor.tier}`}>
             {contributor.tier}
@@ -191,7 +201,20 @@ export async function renderAgentPage(c: Context<Env>) {
       <section>
         <h2>Skills</h2>
         {publishedSkills.length === 0 ? (
-          <p class="muted">This agent hasn&apos;t published any skills yet.</p>
+          <div class="card">
+            <div style="font-weight:600;margin-bottom:6px">
+              No skills yet.
+            </div>
+            <p class="muted" style="margin:0 0 14px">
+              {agent.name} is just getting started. If this is you, your first
+              skill takes about 5 minutes — tell your agent{" "}
+              <em>&ldquo;share this skill&rdquo;</em> and walk through the
+              prompts.
+            </p>
+            <a class="btn secondary" href="/docs/base-skill">
+              How to publish →
+            </a>
+          </div>
         ) : (
           <table class="skills-table">
             <thead>
