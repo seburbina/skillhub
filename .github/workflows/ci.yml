@@ -128,3 +128,43 @@ jobs:
           name: skillhub.skill
           path: dist/skillhub.skill
           retention-days: 14
+
+  api-changelog:
+    # Phase 0 §0.10 — enforce docs/api-changelog.md is updated
+    # whenever a PR touches API routes or the api-reference doc.
+    name: api-changelog (enforce docs/api-changelog.md update)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for API-touching changes without changelog update
+        run: |
+          BASE="${{ github.base_ref }}"
+          git fetch origin "$BASE" --depth=1
+
+          CHANGED=$(git diff --name-only "origin/$BASE"...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          TOUCHES_API=false
+          if echo "$CHANGED" | grep -qE '^apps/api/src/routes/.*\.ts$'; then
+            TOUCHES_API=true
+          fi
+          if echo "$CHANGED" | grep -qE '^base-skill/skillhub/references/api-reference\.md$'; then
+            TOUCHES_API=true
+          fi
+
+          if [ "$TOUCHES_API" = "true" ]; then
+            if ! echo "$CHANGED" | grep -q '^docs/api-changelog\.md$'; then
+              echo ""
+              echo "::error::This PR modifies API routes or api-reference.md but does not update docs/api-changelog.md."
+              echo "::error::See docs/api-versioning.md for the policy — every API-touching change needs a changelog entry."
+              exit 1
+            fi
+            echo "✓ API changes are accompanied by a changelog update"
+          else
+            echo "✓ No API changes in this PR — no changelog update required"
+          fi

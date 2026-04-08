@@ -137,6 +137,9 @@ export const users = pgTable(
     plan: userPlanEnum("plan").notNull().default("free"),
     // MONETIZATION-RESERVED — unused in MVP
     stripeCustomerId: text("stripe_customer_id"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier. FK added
+    // to tenants(id) in Phase 2 when the tenants table exists.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -146,6 +149,7 @@ export const users = pgTable(
   },
   (t) => ({
     emailIdx: index("users_email_idx").on(t.email),
+    tenantIdx: index("users_tenant_idx").on(t.tenantId),
   }),
 );
 
@@ -164,6 +168,8 @@ export const agents = pgTable(
     reputationScore: numeric("reputation_score", { precision: 8, scale: 4 })
       .notNull()
       .default("0"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -176,6 +182,7 @@ export const agents = pgTable(
     apiKeyHashIdx: index("agents_api_key_hash_idx").on(t.apiKeyHash),
     ownerIdx: index("agents_owner_idx").on(t.ownerUserId),
     ownerNameUnq: unique("agents_owner_name_unq").on(t.ownerUserId, t.name),
+    tenantIdx: index("agents_tenant_idx").on(t.tenantId),
   }),
 );
 
@@ -218,6 +225,8 @@ export const skills = pgTable(
       .notNull()
       .default("0"),
     licenseSpdx: text("license_spdx").notNull().default("MIT"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -231,6 +240,7 @@ export const skills = pgTable(
     authorIdx: index("skills_author_idx").on(t.authorAgentId),
     visibilityIdx: index("skills_visibility_idx").on(t.visibility),
     categoryIdx: index("skills_category_idx").on(t.category),
+    tenantIdx: index("skills_tenant_idx").on(t.tenantId),
     // HNSW vector index is created in the raw SQL migration — Drizzle can't express it yet.
   }),
 );
@@ -249,6 +259,8 @@ export const skillVersions = pgTable(
     githubCommitSha: text("github_commit_sha"),
     changelogMd: text("changelog_md"),
     scrubReportId: uuid("scrub_report_id"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     publishedAt: timestamp("published_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -261,6 +273,7 @@ export const skillVersions = pgTable(
       t.semver,
     ),
     skillIdx: index("skill_versions_skill_idx").on(t.skillId),
+    tenantIdx: index("skill_versions_tenant_idx").on(t.tenantId),
   }),
 );
 
@@ -291,6 +304,8 @@ export const invocations = pgTable(
     outcome: invocationOutcomeEnum("outcome"),
     rating: smallint("rating"), // -1 | 0 | 1
     clientMeta: jsonb("client_meta"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -299,6 +314,7 @@ export const invocations = pgTable(
     skillIdx: index("invocations_skill_idx").on(t.skillId),
     agentIdx: index("invocations_agent_idx").on(t.invokingAgentId),
     startedAtIdx: index("invocations_started_at_idx").on(t.startedAt),
+    tenantIdx: index("invocations_tenant_idx").on(t.tenantId),
   }),
 );
 
@@ -398,6 +414,8 @@ export const moderationFlags = pgTable(
     reason: text("reason").notNull(),
     status: moderationStatusEnum("status").notNull().default("open"),
     adminNotes: text("admin_notes"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -410,6 +428,7 @@ export const moderationFlags = pgTable(
       t.reporterAgentId,
       t.reason,
     ),
+    tenantIdx: index("moderation_flags_tenant_idx").on(t.tenantId),
   }),
 );
 
