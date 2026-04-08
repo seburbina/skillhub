@@ -13,6 +13,7 @@ import { embed, toVectorLiteral } from "@/lib/embeddings";
 import { clientIp, errorResponse } from "@/lib/http";
 import { signedDownloadUrl } from "@/lib/r2";
 import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { visibleSkillsPredicate } from "@/lib/visibility";
 import type { Env } from "@/types";
 
 export const skills = new Hono<Env>();
@@ -86,7 +87,7 @@ skills.get("/search", async (c) => {
            install_count, download_count, updated_at, category, tags
     FROM skills
     WHERE deleted_at IS NULL
-      AND visibility IN ('public_free', 'public_paid')
+      AND ${visibleSkillsPredicate(null)}
       ${categoryFilter}
       ${queryEmbedding ? sql`` : sql` AND (display_name ILIKE ${`%${q}%`} OR short_desc ILIKE ${`%${q}%`})`}
     ORDER BY ${orderBy}
@@ -163,7 +164,7 @@ skills.post("/suggest", async (c) => {
            install_count, updated_at
     FROM skills
     WHERE deleted_at IS NULL
-      AND visibility IN ('public_free', 'public_paid')
+      AND ${visibleSkillsPredicate(null)}
       ${queryEmbedding ? sql`` : sql` AND (display_name ILIKE ${`%${intent}%`} OR short_desc ILIKE ${`%${intent}%`})`}
     ORDER BY ${orderBy}
     LIMIT ${limit}
@@ -214,6 +215,7 @@ skills.get("/:slug", async (c) => {
       yankedAt: skillVersions.yankedAt,
       sizeBytes: skillVersions.sizeBytes,
       changelogMd: skillVersions.changelogMd,
+      contentHash: skillVersions.contentHash,
     })
     .from(skillVersions)
     .where(eq(skillVersions.skillId, skill.id))
@@ -246,6 +248,7 @@ skills.get("/:slug", async (c) => {
       yanked_at: v.yankedAt?.toISOString() ?? null,
       size_bytes: v.sizeBytes,
       changelog_md: v.changelogMd,
+      content_hash: v.contentHash,
     })),
   });
 });

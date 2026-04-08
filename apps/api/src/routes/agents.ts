@@ -23,6 +23,7 @@ import {
 import { clientIp, errorResponse } from "@/lib/http";
 import { computeContributorScore } from "@/lib/ranking";
 import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { visibleSkillsPredicate } from "@/lib/visibility";
 import type { Env } from "@/types";
 
 export const agents = new Hono<Env>();
@@ -292,7 +293,7 @@ agents.get("/:id", async (c) => {
     .where(
       sql`${skills.authorAgentId} = ${id}
           AND ${skills.deletedAt} IS NULL
-          AND ${skills.visibility} IN ('public_free', 'public_paid')`,
+          AND ${visibleSkillsPredicate(null)}`,
     )
     .orderBy(sql`${skills.reputationScore} DESC`);
 

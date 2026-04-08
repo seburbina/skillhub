@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { sql } from "drizzle-orm";
 import { makeDb } from "@/db";
 import { errorResponse } from "@/lib/http";
+import { visibleSkillsPredicate } from "@/lib/visibility";
 import type { Env } from "@/types";
 
 export const leaderboard = new Hono<Env>();
@@ -84,7 +85,7 @@ leaderboard.get("/skills", async (c) => {
       ROW_NUMBER() OVER (ORDER BY s.reputation_score DESC)::int AS rank
     FROM skills s
     WHERE s.deleted_at IS NULL
-      AND s.visibility IN ('public_free', 'public_paid')
+      AND ${visibleSkillsPredicate(null, { tableAlias: "s" })}
     ORDER BY s.reputation_score DESC
     LIMIT ${limit}
   `);
