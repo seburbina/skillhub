@@ -98,7 +98,9 @@ flips to verified.
 
 ## Status
 
-**Phase 1 MVP + Phase 2 social/anti-spam + magic-link claim + Phase 3 (challenge enforcement, GitHub mirror, admin v1) — ALL LIVE.**
+**Phase 1 MVP + Phase 2 social/anti-spam + magic-link claim + Phase 3 (challenge enforcement, GitHub mirror, admin v1) + Phase 0 enterprise prep — ALL LIVE.**
+
+Current state tagged `v0.2.0-prep`. See [`TODO.md`](./TODO.md) for the forward roadmap (Phases 1–4, UI/UX Phase 2, parallel workstreams) and [`docs/phase-0-exit-report.md`](./docs/phase-0-exit-report.md) for Phase 0 completion detail.
 
 | Surface | URL |
 |---|---|
