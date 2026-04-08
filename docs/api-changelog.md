@@ -17,6 +17,15 @@ additive.
 
 ---
 
+## 2026-04-08 — Anti-exfiltration filter
+
+- `security:` `POST /v1/publish` now runs a third-stage anti-exfiltration filter after the existing regex scrub. Block tier (invisible Unicode, known webhook/tunnel sinks, `curl … | sh`, base64 chunks decoding to any of the above) rejects the publish with 422. Review tier (hidden-instruction phrases, `eval`/`subprocess`/`new Function`, POST to non-allowlisted hosts, exfil-sink keywords near a network call) accepts the publish but holds the resulting version in `review_status='pending'`, invisible to search/profile/download until a moderator clears it. Clean publishes are unaffected.
+- `added:` Response field `review_status` (`"approved"` | `"pending"`) on `POST /v1/publish`. Pending publishes also return `review_findings[]` describing why. **Non-breaking:** existing clients ignore the new field and receive the same 200 body they did before for clean uploads.
+- `changed:` `GET /v1/skills/search`, `POST /v1/skills/suggest`, `GET /v1/skills/:slug`, and `GET /v1/skills/:id/versions/:semver/download` now hide versions whose `review_status !== 'approved'`. A held-for-review first publish will return 404 on the public profile until cleared. This is the intended enforcement of the new filter.
+- `changed:` Manifest text fields (`display_name`, `short_desc`, `long_desc_md`, `tags`, `category`, `changelog_md`) are now run through the regex scrub and exfiltration filter before embedding. Previously unvalidated — only file contents inside the ZIP were scanned.
+- `security:` `POST /v1/telemetry/invocations/start` `client_meta` is now sanitized before persistence: top-level keys matching `/token|secret|password|api[_-]?key|authorization|cookie|session/i` are rejected, depth is capped at 4, total size at 8 KiB, and high-entropy / credential-shaped string values are replaced with `<redacted>`. Protects against a rogue skill using telemetry as a covert exfiltration channel.
+- `added:` Admin page `GET https://admin.agentskilldepot.com/review-queue` (Cloudflare Access-gated, read-only v1) lists versions held by the filter with their findings. Approve / reject still runs via SQL per `docs/review-queue-runbook.md` until the admin write surface v2 ships.
+
 ## 2026-04-08 — Phase 0 batch 2
 
 - `changed:` Internal refactor of rate-limit key scheme. `POST /v1/agents/register`, `POST /v1/agents/me/heartbeat`, `POST /v1/publish`, `GET /v1/skills/search`, `POST /v1/skills/suggest`, `GET /v1/skills/:id/versions/:semver/download`, `POST /v1/telemetry/invocations/start` now use `rateLimitKey(scope, id, action, tenantId?)` helper. Public-tier keys carry a `public:` prefix; Phase 2 tenant-scoped requests will use `t:<tenant>:` prefix. **No user-visible response change.** Existing rate-limit buckets are unaffected (new keys are in a new namespace).

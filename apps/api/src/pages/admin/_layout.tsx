@@ -47,6 +47,7 @@ export const AdminLayout: FC<AdminLayoutProps> = ({ title, children }) => (
       <div class="admin-banner">
         ADMIN ·{" "}
         <a href="/queue">Moderation queue</a>
+        <a href="/review-queue">Exfil review</a>
         <a href="/agent">Agent lookup</a>
         <a href="/skill">Skill lookup</a>
         <span class="muted" style="margin-left:auto">read-only v1</span>

@@ -98,9 +98,15 @@ Rejected versions stay in the DB and R2 for audit. The publisher can see
 them on their authenticated "my skills" surface with the rejection notes;
 no action from the public side.
 
-## Why there is no `/v1/admin/*` endpoint yet
+## Admin UI
 
-The codebase does not currently have an admin-auth middleware (verified in
-the plan phase — only the `moderation_flags.admin_notes` audit column
-references "admin"). Standing one up is a separate project. Until then,
-direct SQL is the intentional UX for moderators.
+An `admin.agentskilldepot.com/review-queue` read-only page lists everything
+with `review_status = 'pending'` (and supports `?status=approved|rejected`
+for audit). It runs on the admin surface gated by Cloudflare Access, same
+as the existing moderation queue. It shows the findings inline so you can
+decide without a DB round-trip.
+
+**Clearing holds still runs via SQL** below — the admin surface v1 is
+deliberately read-only. Hooking approve/reject into the admin page is
+tracked for admin surface v2, alongside the existing `resolve` / `dismiss`
+/ `yank` actions on the general moderation queue.

@@ -171,11 +171,24 @@ const SCANNABLE_EXTENSIONS = new Set([
   "html", "xml",
 ]);
 
+// Files that define the exfiltration rules themselves. Scanning them
+// produces guaranteed false positives (they contain every block-tier
+// pattern by design). Kept in sync with `_EXFIL_SELF_REFERENTIAL_SUFFIXES`
+// in base-skill/skillhub/scripts/sanitize.py.
+const SELF_REFERENTIAL_SUFFIXES: readonly string[] = [
+  "references/scrubbing.md",
+  "scripts/sanitize.py",
+];
+
 function isScannable(path: string): boolean {
-  const lower = path.toLowerCase();
+  const normalized = path.replace(/\\/g, "/").toLowerCase();
   // Skip common vendor/bundled paths outright.
-  if (/\b(?:node_modules|vendor|dist|build|\.min\.)/i.test(lower)) return false;
-  const ext = lower.split(".").pop() ?? "";
+  if (/\b(?:node_modules|vendor|dist|build|\.min\.)/i.test(normalized)) return false;
+  // Skip the detector's own spec/source.
+  for (const suffix of SELF_REFERENTIAL_SUFFIXES) {
+    if (normalized === suffix || normalized.endsWith("/" + suffix)) return false;
+  }
+  const ext = normalized.split(".").pop() ?? "";
   return SCANNABLE_EXTENSIONS.has(ext);
 }
 

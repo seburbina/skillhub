@@ -357,12 +357,28 @@ _CURL_PIPE_SHELL_PATTERNS = [
 _BASE64_CHUNK_RX = re.compile(r"[A-Za-z0-9+/]{120,}={0,2}")
 
 
+# Self-referential files that define the exfiltration rules themselves.
+# These are allowed to contain the patterns; scanning them produces
+# guaranteed false positives. Matching is by POSIX suffix so it works
+# whether the file sits at the root of a skill or nested under skillhub/.
+_EXFIL_SELF_REFERENTIAL_SUFFIXES = (
+    "references/scrubbing.md",
+    "scripts/sanitize.py",
+)
+
+
 def _detect_exfiltration_block(
     text: str,
     rel_path: str,
     findings: list[Finding],
 ) -> None:
     """Append block-tier anti-exfiltration findings. Does not modify text."""
+    # Skip the detector's own spec and documentation — they legitimately
+    # contain every block-tier pattern and would always self-trigger.
+    norm = rel_path.replace("\\", "/")
+    for suffix in _EXFIL_SELF_REFERENTIAL_SUFFIXES:
+        if norm == suffix or norm.endswith("/" + suffix):
+            return
     # Invisible / zero-width / tag characters
     for m in _INVISIBLE_UNICODE_RX.finditer(text):
         line, col = _line_column(text, m.start())
