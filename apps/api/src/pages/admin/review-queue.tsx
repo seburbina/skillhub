@@ -1,6 +1,6 @@
 /** @jsxImportSource hono/jsx */
 import type { Context } from "hono";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { AdminLayout } from "./_layout";
 import { makeDb } from "@/db";
 import { agents, scrubReports, skills, skillVersions } from "@/db/schema";

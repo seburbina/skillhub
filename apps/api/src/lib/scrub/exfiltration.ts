@@ -148,9 +148,6 @@ const NETWORK_CALL_PATTERNS: readonly RegExp[] = [
   /\bcurl\b/g,
 ];
 
-// Match URLs. Kept deliberately loose; the host extraction does the real work.
-const URL_PATTERN = /\bhttps?:\/\/([^/\s"'`<>)]+)[^\s"'`<>]*/gi;
-
 const POST_CALL_WITH_URL =
   /\b(?:requests|httpx|axios)\.(?:post|put|patch)\s*\(\s*["']?(https?:\/\/[^\s"']+)/gi;
 
