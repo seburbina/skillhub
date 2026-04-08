@@ -445,6 +445,80 @@ export const rateLimitBuckets = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Audit log (Phase 0 §0.2) — append-only via RLS
+// ---------------------------------------------------------------------------
+
+/**
+ * Every mutation worth auditing writes a row here. Phase 0 wires the
+ * writeAudit() helper into the high-signal mutation endpoints; Phase 2
+ * extends to all tenant-scoped routes.
+ *
+ * RLS-enforced append-only at the database level:
+ *   - INSERT policy: USING (true) → anyone can write
+ *   - SELECT policy: USING (true) → anyone can read (Phase 2 tightens)
+ *   - NO UPDATE or DELETE policies → writes are immutable
+ *
+ * `tenant_id` is null for public-tier events. Phase 2 tightens the
+ * SELECT policy so tenant readers only see their own rows.
+ */
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: uuid("tenant_id"),
+    actorType: text("actor_type").notNull(), // 'user' | 'agent' | 'system' | 'stripe_webhook'
+    actorId: uuid("actor_id"),
+    actorEmail: text("actor_email"), // denormalized for historical searches
+    action: text("action").notNull(),
+    targetType: text("target_type"),
+    targetId: text("target_id"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    tenantAtIdx: index("audit_events_tenant_at_idx").on(t.tenantId, t.createdAt),
+    actorIdx: index("audit_events_actor_idx").on(t.actorId),
+    actionIdx: index("audit_events_action_idx").on(t.action),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tenant skill allowlist (Phase 0 §0.8) — empty schema hook
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-tenant operator-approved skill list. Empty in Phase 0. In Phase 2,
+ * the download endpoint will check this for tenant agents and reject
+ * installations of skills not on the tenant's allowlist.
+ *
+ * `tenant_id` is null for public-tier rows (which are always allowed —
+ * the allowlist is opt-in per tenant).
+ */
+export const tenantSkillAllowlist = pgTable(
+  "tenant_skill_allowlist",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: uuid("tenant_id"),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "cascade" }),
+    allowedByUserId: uuid("allowed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    allowedAt: timestamp("allowed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    skillIdx: index("tenant_skill_allowlist_skill_idx").on(t.skillId),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Stats & gamification (refreshed hourly by the Worker scheduled() handler)
 // ---------------------------------------------------------------------------
 

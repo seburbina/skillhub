@@ -4,11 +4,12 @@ import { z } from "zod";
 import { makeDb } from "@/db";
 import { scrubReports, skillVersions, skills } from "@/db/schema";
 import { embedSkill } from "@/jobs/embed-skill";
+import { writeAudit } from "@/lib/audit";
 import { getAgent, requireAgent } from "@/lib/auth";
 import { isNewUnverifiedAgent, verifyChallenge } from "@/lib/challenge";
-import { errorResponse } from "@/lib/http";
+import { clientIp, errorResponse } from "@/lib/http";
 import { putSkill, skillVersionKey } from "@/lib/r2";
-import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
 import { scanSkill } from "@/lib/scrub/regex";
 import { textFilesFromZip } from "@/lib/unzip";
 import type { Env } from "@/types";
@@ -56,7 +57,7 @@ publish.post("/", async (c) => {
   const newAgent = isNewUnverifiedAgent(agent);
   const rl = await checkRateLimit(
     db,
-    `agent:${agent.id}:publish`,
+    rateLimitKey("agent", agent.id, "publish", agent.tenantId),
     LIMITS.publish,
     newAgent,
   );
@@ -319,6 +320,27 @@ publish.post("/", async (c) => {
     embedSkill(c.env, skillId)
       .then((r) => console.log("[publish.embedSkill]", r))
       .catch((e) => console.warn("[publish.embedSkill] failed", e)),
+  );
+
+  // Audit trail — fire and forget (never blocks the response).
+  c.executionCtx.waitUntil(
+    writeAudit(db, {
+      tenantId: agent.tenantId ?? null,
+      actorType: "agent",
+      actorId: agent.id,
+      action: "skill.published",
+      targetType: "skill",
+      targetId: skillId,
+      ip: clientIp(c),
+      userAgent: c.req.header("user-agent") ?? null,
+      metadata: {
+        slug: manifest.slug,
+        semver: manifest.semver,
+        version_id: newVersion.id,
+        size_bytes: zipBytes.length,
+        content_hash: contentHash,
+      },
+    }),
   );
 
   return c.json({

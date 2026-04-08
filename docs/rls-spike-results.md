@@ -180,3 +180,89 @@ traffic), and sets up Phase 2 as a mechanical migration.
   new wrapper — start with the old, migrate in Phase 2
 
 **Spike status: closed. No architectural pivot needed.**
+
+---
+
+## Addendum (2026-04-08) — Neon owner bypass
+
+Phase 0 batch 2 surfaced a second, equally important constraint: the
+default `neondb_owner` role on Neon has **`rolbypassrls = true`**, which
+means **every RLS policy is unconditionally bypassed** when the Worker
+connects as this role.
+
+```sql
+SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'neondb_owner';
+-- rolname      | rolsuper | rolbypassrls
+-- -------------|----------|-------------
+-- neondb_owner | f        | t
+```
+
+This means:
+
+1. **Phase 0 RLS is permissive by design.** The `USING (true)` policies
+   we enabled in §0.1 don't need to block anything — the owner bypasses
+   RLS entirely, so the policies wouldn't fire even if we tightened
+   them to `USING (tenant_id = current_setting(...))`.
+
+2. **`audit_events` append-only is NOT enforced at the DB layer today.**
+   Even with `FORCE ROW LEVEL SECURITY` set, the bypass attribute wins.
+   A compromised Worker (or a careless operator running a migration
+   script) can delete audit events. Append-only is enforced only by
+   the application layer — `writeAudit()` has no `deleteAudit()`
+   counterpart, and the helper never calls UPDATE/DELETE on the table.
+
+3. **The fix is in Phase 2:** create a non-bypassing Postgres role
+   (e.g., `skillhub_app`) that the Worker connects as. Grant it:
+   - `SELECT, INSERT, UPDATE, DELETE` on all tables except
+     `audit_events` (which gets `SELECT, INSERT` only)
+   - `USAGE` on sequences
+   - NO `BYPASSRLS`, NO `SUPERUSER`
+
+   Then tighten the RLS policies from `USING (true)` to the real
+   tenant predicate. Cron jobs that need to bypass use a separate
+   connection with the owner role explicitly for that one operation.
+
+### What still has value from Phase 0
+
+Even without enforceable RLS, the Phase 0 work pays for itself:
+
+- **Schema hooks** (`tenant_id` columns, `audit_events`,
+  `tenant_skill_allowlist`) are in place — Phase 2 can wire
+  enforcement without migrations
+- **Code patterns** (`visibleSkillsPredicate`, `writeAudit`,
+  `rateLimitKey`, `runWithTenantContext`) are in place — Phase 2
+  swaps in the real values
+- **Documentation** (policies, runbooks, changelog) is durable
+- **Audit events are still getting written** — they're just not
+  tamper-proof at the DB layer yet. That's a Phase 2 fix, not a
+  Phase 0 regression.
+
+### Phase 2 requirements document update
+
+Add to `docs/enterprise-scoping.md` §17 as a new priority item:
+
+> **§17.21** Provision a non-superuser, non-`rolbypassrls` Postgres
+> role for the Worker runtime. Migrate `DATABASE_URL` to use it.
+> Verify via `SELECT rolbypassrls FROM pg_roles WHERE rolname =
+> current_user` that the attribute is `false`. This is a prerequisite
+> for any RLS-based tenant isolation.
+
+The alternative (disable `rolbypassrls` on `neondb_owner` itself) is
+NOT recommended because it breaks existing Neon platform features
+that assume the owner has full access.
+
+### Verification
+
+```bash
+export DATABASE_URL=...
+node --input-type=module -e "
+import { neon } from '@neondatabase/serverless';
+const sql = neon(process.env.DATABASE_URL);
+const r = await sql(\"SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname = current_user\");
+console.log(r);
+"
+```
+
+Phase 2 will assert this returns `{rolname: 'skillhub_app',
+rolbypassrls: false}` before proceeding with tighter RLS policies.
+

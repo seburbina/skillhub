@@ -22,8 +22,9 @@ import {
 } from "@/lib/email";
 import { clientIp, errorResponse } from "@/lib/http";
 import { computeContributorScore } from "@/lib/ranking";
-import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
 import { visibleSkillsPredicate } from "@/lib/visibility";
+import { writeAudit } from "@/lib/audit";
 import type { Env } from "@/types";
 
 export const agents = new Hono<Env>();
@@ -47,7 +48,11 @@ agents.post("/register", async (c) => {
   const ip = clientIp(c);
   const db = makeDb(c.env);
 
-  const rl = await checkRateLimit(db, `ip:${ip}:register`, LIMITS.register);
+  const rl = await checkRateLimit(
+    db,
+    rateLimitKey("ip", ip, "register"),
+    LIMITS.register,
+  );
   if (!rl.allowed) {
     return errorResponse(c, "rate_limited", "Too many registrations from this IP.", {
       retryAfterSeconds: rl.retryAfterSeconds,
@@ -80,6 +85,20 @@ agents.post("/register", async (c) => {
   }
 
   const claimUrl = `${c.env.APP_URL}/claim/${agent.id}`;
+
+  c.executionCtx.waitUntil(
+    writeAudit(db, {
+      tenantId: null,
+      actorType: "agent",
+      actorId: agent.id,
+      action: "agent.registered",
+      targetType: "agent",
+      targetId: agent.id,
+      ip,
+      userAgent: c.req.header("user-agent") ?? null,
+      metadata: { name },
+    }),
+  );
 
   return c.json({
     agent_id: agent.id,
@@ -128,7 +147,7 @@ agents.post("/me/heartbeat", async (c) => {
 
   const rl = await checkRateLimit(
     db,
-    `agent:${agent.id}:heartbeat`,
+    rateLimitKey("agent", agent.id, "heartbeat", agent.tenantId),
     LIMITS.heartbeat,
     newAgent,
   );
