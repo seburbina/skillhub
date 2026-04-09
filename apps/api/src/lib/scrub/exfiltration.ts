@@ -300,11 +300,346 @@ function scanFile(file: ScanFile, out: ExfiltrationFinding[]): void {
     }
   }
 
+  // --- REVIEW: password-protected archive references (ClawHavoc vector) ---
+  scanPasswordArchive(file, out);
+
+  // --- REVIEW: agent memory manipulation (ClawHavoc vector) ---
+  scanMemoryManipulation(file, out);
+
+  // --- REVIEW: fake prerequisite social engineering (ClawHavoc vector) ---
+  scanFakePrerequisite(file, out);
+
+  // --- REVIEW: runtime code fetch (skills.sh W012) ---
+  scanRuntimeCodeFetch(file, out);
+
+  // --- REVIEW: unbounded external data ingestion (skills.sh W011) ---
+  scanUnboundedIngestion(file, out);
+
+  // --- REVIEW: risky dependency sources (Socket/Snyk) ---
+  scanDependencyRisk(file, out);
+
   // --- REVIEW: non-allowlisted POST/PUT/PATCH ---
   scanNetworkTargets(file, out);
 
   // --- REVIEW: exfil sink near a network call (proximity heuristic) ---
   scanProximity(file, out);
+}
+
+// ---------------------------------------------------------------------------
+// ClawHavoc-motivated review-tier scanners
+// ---------------------------------------------------------------------------
+
+const PASSWORD_PATTERN = /password\s*(?:is\s*[:=]?|[:=])\s*['"`]?\w{3,}/i;
+const ARCHIVE_URL_PATTERN = /https?:\/\/\S+\.(?:zip|rar|7z|tar(?:\.gz)?)\b/i;
+
+/**
+ * Detect password-protected archive download instructions.
+ * A download URL for an archive within 20 lines of a password/passphrase
+ * is a classic malware distribution vector (ClawHavoc used this).
+ */
+function scanPasswordArchive(file: ScanFile, out: ExfiltrationFinding[]): void {
+  const lines = file.content.split("\n");
+  const PROXIMITY = 20;
+
+  const passwordLines: number[] = [];
+  const archiveLines: number[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (PASSWORD_PATTERN.test(lines[i]!)) passwordLines.push(i);
+    if (ARCHIVE_URL_PATTERN.test(lines[i]!)) archiveLines.push(i);
+  }
+
+  if (passwordLines.length === 0 || archiveLines.length === 0) return;
+
+  for (const pLine of passwordLines) {
+    for (const aLine of archiveLines) {
+      if (Math.abs(pLine - aLine) <= PROXIMITY) {
+        out.push({
+          type: "password_protected_archive",
+          severity: "review",
+          tier: "rule",
+          file: file.path,
+          line: pLine + 1,
+          snippet: truncate(lines[pLine]!),
+          reason:
+            "Skill references a password-protected archive download — " +
+            "common malware distribution vector (see ClawHavoc).",
+        });
+        return; // One finding per file is enough
+      }
+    }
+  }
+}
+
+const MEMORY_FILE_PATTERNS: readonly RegExp[] = [
+  /\bwrite\b.*\b(?:MEMORY|memory)\.md\b/i,
+  /\bmodify\b.*\b(?:MEMORY|memory)\.md\b/i,
+  /\boverwrite\b.*\b(?:MEMORY|memory)\.md\b/i,
+  /\bwrite\b.*\b(?:SOUL|soul)\.md\b/i,
+  /\bmodify\b.*\b(?:SOUL|soul)\.md\b/i,
+  /\b(?:modify|write|overwrite|update)\b.*\.session_state/i,
+  /\b(?:remember|persist|store\s+in\s+memory)\b.*\b(?:MEMORY|memory|SOUL|soul)\.md\b/i,
+];
+
+/**
+ * Detect instructions to modify agent memory files.
+ * Skills should not write to MEMORY.md, SOUL.md, or .session_state.json —
+ * this is a persistence/manipulation vector.
+ */
+function scanMemoryManipulation(file: ScanFile, out: ExfiltrationFinding[]): void {
+  const lines = file.content.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    for (const rx of MEMORY_FILE_PATTERNS) {
+      if (rx.test(line)) {
+        out.push({
+          type: "agent_memory_manipulation",
+          severity: "review",
+          tier: "rule",
+          file: file.path,
+          line: i + 1,
+          snippet: truncate(line),
+          reason:
+            "Skill contains instructions to modify agent memory files — " +
+            "potential persistence vector.",
+        });
+        return; // One finding per file is enough
+      }
+    }
+  }
+}
+
+const FAKE_PREREQ_PATTERN =
+  /(?:prerequisite|required|must\s+install|dependency)[^.]{0,200}(?:curl\s|wget\s|pip\s+install|npm\s+install|brew\s+install)/is;
+
+/**
+ * Detect fake prerequisite social engineering.
+ * Skills that instruct users to install external software as a
+ * "prerequisite" was the primary ClawHavoc social engineering vector.
+ */
+function scanFakePrerequisite(file: ScanFile, out: ExfiltrationFinding[]): void {
+  // Check multi-line windows (5 lines at a time) for the pattern
+  const lines = file.content.split("\n");
+  const WINDOW = 5;
+
+  for (let i = 0; i < lines.length; i++) {
+    const window = lines.slice(i, i + WINDOW).join("\n");
+    const match = FAKE_PREREQ_PATTERN.exec(window);
+    if (match) {
+      out.push({
+        type: "fake_prerequisite",
+        severity: "review",
+        tier: "rule",
+        file: file.path,
+        line: i + 1,
+        snippet: truncate(match[0]),
+        reason:
+          "Skill instructs installing external software as a prerequisite — " +
+          "primary ClawHavoc social engineering vector.",
+      });
+      return; // One finding per file is enough
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// skills.sh audit-inspired scanners (W011, W012, Socket/Snyk)
+// ---------------------------------------------------------------------------
+
+const RUNTIME_CODE_FETCH_PATTERNS: readonly { rx: RegExp; label: string; reason: string }[] = [
+  {
+    rx: /\bgit\s+clone\b/gi,
+    label: "git_clone",
+    reason: "Skill runs 'git clone' to fetch code at runtime — bypasses registry audits.",
+  },
+  {
+    rx: /\bgit\s+pull\b/gi,
+    label: "git_pull",
+    reason: "Skill runs 'git pull' to update code at runtime.",
+  },
+  {
+    rx: /\braw\.githubusercontent\.com\b/gi,
+    label: "raw_github_fetch",
+    reason: "Skill fetches raw content from GitHub — runtime code download vector.",
+  },
+  {
+    rx: /github\.com\/[^\s"']+\/raw\//gi,
+    label: "github_raw_url",
+    reason: "Skill references a GitHub raw file URL — runtime code download vector.",
+  },
+  {
+    rx: /\b(?:curl|wget)\b[^\n|&;]{0,200}\.(?:py|js|ts|sh|rb|go)\b/gi,
+    label: "curl_download_code",
+    reason: "Skill downloads a code file (py/js/ts/sh) at runtime via curl/wget.",
+  },
+  {
+    rx: /\bimportlib\.import_module\s*\(/g,
+    label: "dynamic_import_python",
+    reason: "Dynamic Python import — can load arbitrary modules at runtime.",
+  },
+  {
+    rx: /\bimport\s*\(\s*["']https?:\/\//g,
+    label: "dynamic_import_url",
+    reason: "Dynamic import() from an HTTP URL — loads remote code at runtime.",
+  },
+  {
+    rx: /\brequire\s*\(\s*["']https?:\/\//g,
+    label: "require_url",
+    reason: "require() from an HTTP URL — loads remote code at runtime.",
+  },
+  {
+    rx: /\bpip\s+install\s+git\+https?:\/\//gi,
+    label: "pip_install_git",
+    reason: "Installs a Python package directly from a Git repo — bypasses PyPI audits.",
+  },
+];
+
+/**
+ * Detect runtime code fetching patterns (skills.sh W012).
+ * Skills that download or clone code at runtime bypass registry scanning.
+ */
+function scanRuntimeCodeFetch(file: ScanFile, out: ExfiltrationFinding[]): void {
+  const { path, content } = file;
+
+  for (const { rx, label, reason } of RUNTIME_CODE_FETCH_PATTERNS) {
+    for (const m of content.matchAll(rx)) {
+      out.push(makeFinding({
+        type: `runtime_code_fetch:${label}`,
+        severity: "review",
+        file: path,
+        offset: m.index ?? 0,
+        content,
+        snippet: truncate(m[0]!),
+        reason,
+      }));
+    }
+  }
+}
+
+/**
+ * Detect unbounded external data ingestion (skills.sh W011).
+ *
+ * Flags skills that read external data (network/file) and feed it into
+ * string interpolation or template contexts within 10 lines — a prompt
+ * injection vector when the data isn't delimited.
+ */
+function scanUnboundedIngestion(file: ScanFile, out: ExfiltrationFinding[]): void {
+  const lines = file.content.split("\n");
+  const PROXIMITY = 10;
+
+  // Patterns that read external data
+  const DATA_READ_PATTERNS: readonly RegExp[] = [
+    /\bfetch\s*\(/g,
+    /\brequests\.get\s*\(/g,
+    /\bhttpx\.get\s*\(/g,
+    /\bopen\s*\([^)]*['"][rR]?['"]\s*\)/g,
+    /\bfs\.readFile/g,
+    /\bfs\.readFileSync/g,
+    /\burllib\.request\.urlopen/g,
+    /\bBeautifulSoup\s*\(/g,
+    /\.json\s*\(\s*\)/g,
+    /\.text\s*\(\s*\)/g,
+  ];
+
+  // Patterns that inject data into strings/prompts without delimiters
+  const INTERPOLATION_PATTERNS: readonly RegExp[] = [
+    /\bf["'].*\{.*\}/g,              // Python f-strings
+    /`[^`]*\$\{[^}]+\}[^`]*`/g,     // JS template literals
+    /\bformat\s*\(/g,                // Python .format()
+    /\b%\s*(?:s|d|r)\b/g,           // Python %-formatting
+    /\+\s*(?:response|data|content|result|body|text|output)\b/gi, // string concatenation with data vars
+  ];
+
+  // Precompute lines with data reads
+  const readLines = new Set<number>();
+  lines.forEach((line, i) => {
+    for (const rx of DATA_READ_PATTERNS) {
+      if (rx.test(line)) {
+        readLines.add(i);
+        break;
+      }
+    }
+  });
+  if (readLines.size === 0) return;
+
+  // Check for interpolation near data reads
+  let found = false;
+  lines.forEach((line, i) => {
+    if (found) return;
+    for (const rx of INTERPOLATION_PATTERNS) {
+      if (!rx.test(line)) continue;
+      for (let j = Math.max(0, i - PROXIMITY); j <= Math.min(lines.length - 1, i + PROXIMITY); j++) {
+        if (readLines.has(j)) {
+          out.push({
+            type: "unbounded_ingestion",
+            severity: "review",
+            tier: "rule",
+            file: file.path,
+            line: i + 1,
+            snippet: truncate(line),
+            reason:
+              "External data read within " + PROXIMITY + " lines of string interpolation — " +
+              "potential indirect prompt injection if data isn't delimited " +
+              "(skills.sh W011).",
+          });
+          found = true;
+          return;
+        }
+      }
+    }
+  });
+}
+
+const DEPENDENCY_RISK_PATTERNS: readonly { rx: RegExp; label: string; reason: string }[] = [
+  {
+    rx: /\bpip\s+install\b[^\n]*--index-url\b/gi,
+    label: "pip_custom_index",
+    reason: "pip install with custom --index-url — may pull packages from an untrusted registry.",
+  },
+  {
+    rx: /\bnpm\s+install\b[^\n]*--registry\b/gi,
+    label: "npm_custom_registry",
+    reason: "npm install with custom --registry — may pull packages from an untrusted registry.",
+  },
+  {
+    rx: /\bpip\s+install\b[^\n]*(?:file:|\.\/|\.\.\/)/gi,
+    label: "pip_local_path",
+    reason: "pip install from a local/relative path — could install attacker-controlled code.",
+  },
+  {
+    rx: /\bnpm\s+install\b[^\n]*(?:file:|\.\/|\.\.\/)/gi,
+    label: "npm_local_path",
+    reason: "npm install from a local/relative path — could install attacker-controlled code.",
+  },
+  {
+    rx: />=\d+\.\d+(?:\.\d+)?\s*$/gm,
+    label: "unbounded_version",
+    reason: "Unbounded version range (>=) — allows future potentially malicious versions.",
+  },
+];
+
+/**
+ * Detect risky dependency installation patterns (Socket/Snyk inspired).
+ * Flags packages from non-standard registries, Git repos, local paths,
+ * and unbounded version ranges.
+ */
+function scanDependencyRisk(file: ScanFile, out: ExfiltrationFinding[]): void {
+  const { path, content } = file;
+
+  for (const { rx, label, reason } of DEPENDENCY_RISK_PATTERNS) {
+    for (const m of content.matchAll(rx)) {
+      out.push(makeFinding({
+        type: `dependency_risk:${label}`,
+        severity: "review",
+        file: path,
+        offset: m.index ?? 0,
+        content,
+        snippet: truncate(m[0]!),
+        reason,
+      }));
+    }
+  }
 }
 
 function scanNetworkTargets(file: ScanFile, out: ExfiltrationFinding[]): void {

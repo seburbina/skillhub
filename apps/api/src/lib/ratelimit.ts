@@ -60,6 +60,10 @@ export const LIMITS = {
   register:  { windowSeconds: 86400, max: 5 },
   heartbeat: { windowSeconds: 1500,  max: 1 },
   publish:   { windowSeconds: 86400, max: 3 },
+  /** New publishers (< 7 days old) can publish at most 5 skills in their
+   *  first week. Stacks with the per-day `publish` limit. Verified agents
+   *  (ownerUserId set) skip this check entirely. See ClawHavoc hardening. */
+  publishFirstWeek: { windowSeconds: 86400 * 7, max: 5 },
   search:    { windowSeconds: 3600,  max: 600 },
   download:  { windowSeconds: 86400, max: 200 },
   telemetry: { windowSeconds: 3600,  max: 1000 },

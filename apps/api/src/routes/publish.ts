@@ -13,6 +13,8 @@ import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
 import { scanSkill } from "@/lib/scrub/regex";
 import { detectExfiltration, worstOf } from "@/lib/scrub/exfiltration";
 import { classifyWithLLM } from "@/lib/scrub/exfiltration-llm";
+import { checkTyposquat } from "@/lib/typosquat";
+import { scanVersionDiff } from "@/lib/version-diff";
 import { textFilesFromZip } from "@/lib/unzip";
 import type { Env } from "@/types";
 
@@ -67,6 +69,23 @@ publish.post("/", async (c) => {
     return errorResponse(c, "rate_limited", "Publish rate limit exceeded.", {
       retryAfterSeconds: rl.retryAfterSeconds,
     });
+  }
+
+  // New-publisher first-week rate limit (ClawHavoc hardening §4).
+  // Agents < 7 days old get max 5 skills/week. Verified agents skip this.
+  const agentAgeMs = Date.now() - agent.createdAt.getTime();
+  const isFirstWeek = agentAgeMs < 7 * 24 * 60 * 60 * 1000;
+  if (isFirstWeek && !agent.ownerUserId) {
+    const weekRl = await checkRateLimit(
+      db,
+      rateLimitKey("agent", agent.id, "publish_first_week", agent.tenantId),
+      LIMITS.publishFirstWeek,
+    );
+    if (!weekRl.allowed) {
+      return errorResponse(c, "rate_limited", "New publisher weekly limit exceeded (5 skills in first 7 days).", {
+        retryAfterSeconds: weekRl.retryAfterSeconds,
+      });
+    }
   }
 
   // Anti-spam: new unverified agents must solve the math challenge handed
@@ -184,6 +203,30 @@ publish.post("/", async (c) => {
     );
   }
 
+  // Typosquat detection (ClawHavoc hardening §1).
+  // Flags slugs suspiciously similar to popular skills for review.
+  const typosquat = await checkTyposquat(db, manifest.slug);
+  let typosquatReviewStatus: "approved" | "pending" = "approved";
+  if (typosquat.isSuspicious) {
+    typosquatReviewStatus = "pending";
+    c.executionCtx.waitUntil(
+      writeAudit(db, {
+        tenantId: agent.tenantId ?? null,
+        actorType: "agent",
+        actorId: agent.id,
+        action: "skill.typosquat_flagged",
+        targetType: "skill",
+        targetId: manifest.slug,
+        ip: clientIp(c),
+        userAgent: c.req.header("user-agent") ?? null,
+        metadata: {
+          slug: manifest.slug,
+          similar_slugs: typosquat.similarSlugs,
+        },
+      }),
+    );
+  }
+
   // Read .skill bytes
   const arrayBuffer = await skillBlob.arrayBuffer();
   const zipBytes = new Uint8Array(arrayBuffer);
@@ -272,11 +315,30 @@ publish.post("/", async (c) => {
     findings: llmFindings,
   };
 
-  const exfilSeverity = worstOf(exfilResult, manifestExfil, llmResult);
+  // Version-diff scanning (ClawHavoc hardening §3).
+  // Only runs when updating an existing skill — catches "clean v1, malware
+  // in v1.0.1" pattern by scanning only changed content.
+  const existingSkillForDiff = await db
+    .select({ id: skills.id })
+    .from(skills)
+    .where(eq(skills.slug, manifest.slug))
+    .limit(1);
+  let diffResult: import("@/lib/scrub/exfiltration").ExfiltrationResult = { overallSeverity: "clean", findings: [] };
+  if (existingSkillForDiff.length > 0) {
+    diffResult = await scanVersionDiff(
+      db,
+      c.env.SKILLS_BUCKET,
+      existingSkillForDiff[0]!.id,
+      textFiles,
+    );
+  }
+
+  const exfilSeverity = worstOf(exfilResult, manifestExfil, llmResult, diffResult);
   const mergedExfilFindings = [
     ...exfilResult.findings,
     ...manifestExfil.findings,
     ...llmResult.findings,
+    ...diffResult.findings,
   ];
 
   if (exfilSeverity === "block") {
@@ -293,7 +355,9 @@ publish.post("/", async (c) => {
   }
 
   const reviewStatus: "approved" | "pending" =
-    exfilSeverity === "review" ? "pending" : "approved";
+    exfilSeverity === "review" || typosquatReviewStatus === "pending"
+      ? "pending"
+      : "approved";
 
   // Upload to R2
   const r2Key = skillVersionKey(manifest.slug, manifest.semver);
@@ -397,9 +461,14 @@ publish.post("/", async (c) => {
       reviewStatus,
       reviewNotes:
         reviewStatus === "pending"
-          ? `Held by anti-exfiltration filter. ${mergedExfilFindings
-              .filter((f) => f.severity === "review")
-              .length} review-tier finding(s). See scrub_reports.llm_findings.`
+          ? [
+              typosquatReviewStatus === "pending"
+                ? `Slug '${manifest.slug}' is similar to existing skills: ${typosquat.similarSlugs.join(", ")}.`
+                : null,
+              mergedExfilFindings.filter((f) => f.severity === "review").length > 0
+                ? `${mergedExfilFindings.filter((f) => f.severity === "review").length} review-tier finding(s). See scrub_reports.llm_findings.`
+                : null,
+            ].filter(Boolean).join(" ") || "Held for manual review."
           : null,
     })
     .returning();
