@@ -246,6 +246,8 @@ export const skillVersions = pgTable(
     contentHash: text("content_hash").notNull(),
     sizeBytes: integer("size_bytes").notNull(),
     r2Key: text("r2_key").notNull(),
+    /** SHA-256 digest in `sha256:{hex}` format for .well-known discovery spec. */
+    sha256Digest: text("sha256_digest"),
     githubCommitSha: text("github_commit_sha"),
     changelogMd: text("changelog_md"),
     scrubReportId: uuid("scrub_report_id"),

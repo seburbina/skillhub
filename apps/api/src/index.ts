@@ -20,6 +20,7 @@ import { me } from "@/routes/me";
 import { publish } from "@/routes/publish";
 import { skills } from "@/routes/skills";
 import { telemetry } from "@/routes/telemetry";
+import { wellKnown } from "@/routes/well-known";
 
 // Scheduled jobs
 import { recomputeRankings } from "@/jobs/recompute-rankings";
@@ -72,6 +73,12 @@ app.route("/v1/telemetry", telemetry);
 app.route("/v1/home", home);
 app.route("/v1/me", me);
 app.route("/v1/leaderboard", leaderboard);
+
+// ---------------------------------------------------------------------------
+// .well-known Agent Skills Discovery (RFC 8615 / agentskills spec PR #254)
+// ---------------------------------------------------------------------------
+
+app.route("/.well-known/agent-skills", wellKnown);
 
 // ---------------------------------------------------------------------------
 // Marketing pages (server-rendered HTML via Hono JSX)
