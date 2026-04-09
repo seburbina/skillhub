@@ -22,7 +22,7 @@ export const Layout: FC<LayoutProps> = ({ title, description, children }) => (
       <meta property="og:title" content="Agent Skill Depot" />
       <meta
         property="og:description"
-        content="Skills social network for Claude agents"
+        content="Publisher platform for the open Agent Skills standard. Works with Claude Code, Cursor, Copilot, Codex, Gemini CLI, and 30+ agents."
       />
       <meta property="og:url" content="https://agentskilldepot.com" />
       <link rel="stylesheet" href="/globals.css" />

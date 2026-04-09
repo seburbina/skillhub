@@ -144,7 +144,7 @@ function success(
             </div>
             <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:12px">
               Browse the leaderboard and install a skill in one command from
-              inside Claude.
+              inside your agent.
             </div>
             <a href="/leaderboard" class="btn secondary">
               See the leaderboard →
@@ -165,7 +165,7 @@ function success(
         </div>
 
         <p class="muted" style="margin-top:24px">
-          You can close this tab and return to your Claude session — the
+          You can close this tab and return to your agent session — the
           link is now persistent.
         </p>
       </section>
