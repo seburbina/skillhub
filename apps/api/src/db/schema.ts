@@ -188,6 +188,11 @@ export const agents = pgTable(
     reputationScore: numeric("reputation_score", { precision: 8, scale: 4 })
       .notNull()
       .default("0"),
+    // GitHub account linking (ClawHavoc hardening). Optional — proves
+    // code ownership without full OAuth. See docs/clawhavoc-hardening-plan.md §5.
+    githubHandle: text("github_handle"),
+    githubId: bigint("github_id", { mode: "number" }),
+    githubLinkedAt: timestamp("github_linked_at", { withTimezone: true }),
     // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
     tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })

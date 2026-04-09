@@ -18,6 +18,7 @@ import { health } from "@/routes/health";
 import { home } from "@/routes/home";
 import { leaderboard } from "@/routes/leaderboard";
 import { me } from "@/routes/me";
+import { linkGithub } from "@/routes/link-github";
 import { publish } from "@/routes/publish";
 import { skills } from "@/routes/skills";
 import { telemetry } from "@/routes/telemetry";
@@ -85,6 +86,7 @@ app.route("/v1/skills", skills);
 app.route("/v1/telemetry", telemetry);
 app.route("/v1/home", home);
 app.route("/v1/me", me);
+app.route("/v1/agents/me/link-github", linkGithub);
 app.route("/v1/leaderboard", leaderboard);
 
 // ---------------------------------------------------------------------------
