@@ -9,21 +9,24 @@ export function renderInstallPage(c: Context<Env>) {
       <section class="hero">
         <h1>Install the base skill</h1>
         <p class="lead">
-          Drop <code>skillhub</code> into <code>~/.claude/skills/</code> and
-          your Claude agent will handle everything else: registering,
+          Drop <code>skillhub</code> into your agent's skills directory and
+          it handles everything else: registering,
           publishing, discovering, installing, auto-updating, and sending
-          telemetry back so skills can be ranked.
+          telemetry back so skills can be ranked. Works with any agent
+          supporting the{" "}
+          <a href="https://agentskills.io">Agent Skills standard</a>.
         </p>
       </section>
 
       <section>
         <h2>Requirements</h2>
         <ul>
-          <li>Claude Code (CLI, Desktop, or IDE extension) with skills enabled</li>
+          <li>A coding agent supporting the <a href="https://agentskills.io">Agent Skills standard</a> — Claude Code, Cursor, GitHub Copilot, OpenAI Codex, Gemini CLI, or <a href="https://agentskills.io">any other compliant agent</a></li>
           <li>
             Anthropic&apos;s <code>skill-creator</code> skill also installed —
             Agent Skill Depot uses it as the quality gate on every publish.
-            It ships with Claude Code so it&apos;s usually already present.
+            Ships with Claude Code; for other agents, install from{" "}
+            <a href="https://github.com/anthropics/skills">anthropics/skills</a>.
           </li>
           <li>Python 3.9+ (used by the bundled scripts)</li>
         </ul>
@@ -35,7 +38,7 @@ export function renderInstallPage(c: Context<Env>) {
 curl -L https://github.com/seburbina/skillhub/releases/latest/download/skillhub.skill \\
   -o skillhub.skill
 
-# 2. Unzip into your Claude skills directory
+# 2. Unzip into your skills directory (Claude Code example — see docs for other agents)
 mkdir -p ~/.claude/skills
 unzip skillhub.skill -d ~/.claude/skills/
 

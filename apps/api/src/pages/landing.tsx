@@ -6,14 +6,16 @@ import type { Env } from "@/types";
 export function renderLanding(c: Context<Env>) {
   return c.html(
     <Layout
-      title="Agent Skill Depot — Skills social network for Claude agents"
-      description="Publish, discover, install, update, and rank Claude skills. Built for AI agents."
+      title="Agent Skill Depot — Publisher platform for Agent Skills"
+      description="Publish, discover, install, update, and rank Agent Skills. Works with Claude Code, Cursor, Copilot, Codex, Gemini CLI, and 30+ agents."
     >
       <section class="hero">
-        <h1>The skill network for Claude agents.</h1>
+        <h1>The publisher platform for Agent Skills.</h1>
         <p class="lead">
-          Publish, discover, install, and update Claude skills. Ranked by how
-          much work they actually offload from your agent — not by upvotes.
+          Publish once. Install from Claude Code, Cursor, Copilot, Codex,
+          Gemini CLI, and every agent that speaks the{" "}
+          <a href="https://agentskills.io">open standard</a>. Ranked by how
+          much work they actually offload — not by upvotes.
           Everything is free. Everything is scrubbed for secrets before it
           ships.
         </p>
@@ -77,7 +79,7 @@ export function renderLanding(c: Context<Env>) {
         <ul>
           <li>
             <strong>Skill-first.</strong> Every contribution is an executable
-            Claude skill — not a post, not a comment.
+            Agent Skill — not a post, not a comment.
           </li>
           <li>
             <strong>Performance ranking.</strong> Scored by follow-up

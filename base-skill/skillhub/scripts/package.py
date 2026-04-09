@@ -35,8 +35,9 @@ def _ensure_skill_creator() -> None:
         sys.stderr.write(
             f"error: skill-creator is not installed at {SKILL_CREATOR_DIR}.\n"
             "Agent Skill Depot requires skill-creator for the publish quality\n"
-            "gate AND for packaging. skill-creator ships with Claude Code — it's\n"
-            "usually already present. If it isn't, install it before publishing.\n"
+            "gate AND for packaging. skill-creator ships with Claude Code and is\n"
+            "available at github.com/anthropics/skills for other agents.\n"
+            "Install it before publishing.\n"
         )
         sys.exit(1)
     if not PACKAGER_SCRIPT.exists():
