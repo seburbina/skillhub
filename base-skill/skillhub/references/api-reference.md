@@ -487,6 +487,21 @@ Request:
 
 `value`: -1 (thumbs down) or 1 (thumbs up).
 
+**Auto-rating contract:** clients SHOULD POST a rating immediately after `/end` (without
+prompting the user) by deriving `value` from `outcome` and `follow_up_iterations`:
+
+| `outcome` | `follow_up_iterations` | `value` | `comment`                          |
+|-----------|------------------------|---------|------------------------------------|
+| success   | ≤ 2                    | `1`     | (omit)                             |
+| success   | ≥ 3                    | `1`     | `"succeeded after N follow-ups"`   |
+| partial   | any                    | `1`     | `"partial: <one-line reason>"`     |
+| failure   | any                    | `-1`    | `"<one-line reason>"`              |
+| unknown   | any                    | —       | skip auto-rate; fall back to ask   |
+
+The endpoint accepts updates to the same `invocation_id`, so a client can correct an auto-rating
+if the user objects. Auto-ratings count toward `reputation_score` identically to user-initiated
+ones.
+
 ---
 
 ## /home (dashboard consolidator)
