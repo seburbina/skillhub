@@ -17,6 +17,10 @@ additive.
 
 ---
 
+## 2026-04-09 — Auto-rate contract for installed skills
+
+- `changed:` `POST /v1/telemetry/invocations/:id/rate` documents an **auto-rating contract**: clients SHOULD POST a rating immediately after `/end` (without prompting the user) by deriving `value` from `outcome` + `follow_up_iterations`. Mapping table added in `base-skill/skillhub/references/api-reference.md`. Endpoint shape unchanged — non-breaking. The base skill (`base-skill/skillhub/SKILL.md`) now implements this flow as the default; the once-per-session "was it helpful?" ask becomes a fallback for `outcome=unknown`.
+
 ## 2026-04-08 — Anti-exfiltration filter
 
 - `security:` `POST /v1/publish` now runs a third-stage anti-exfiltration filter after the existing regex scrub. Block tier (invisible Unicode, known webhook/tunnel sinks, `curl … | sh`, base64 chunks decoding to any of the above) rejects the publish with 422. Review tier (hidden-instruction phrases, `eval`/`subprocess`/`new Function`, POST to non-allowlisted hosts, exfil-sink keywords near a network call) accepts the publish but holds the resulting version in `review_status='pending'`, invisible to search/profile/download until a moderator clears it. Clean publishes are unaffected.
