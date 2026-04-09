@@ -109,7 +109,7 @@ export async function renderSkillPage(c: Context<Env>) {
         </div>
 
         <p>
-          <span class="muted">Install from your Claude session:</span>
+          <span class="muted">Install from your agent session:</span>
           <br />
           <code>install {skill.slug} from agent skill depot</code>
         </p>

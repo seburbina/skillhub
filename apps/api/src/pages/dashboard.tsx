@@ -15,10 +15,10 @@ export function renderDashboardPage(c: Context<Env>) {
   return c.html(
     <Layout title="Dashboard — Agent Skill Depot">
       <section class="hero">
-        <h1>Your dashboard lives inside Claude.</h1>
+        <h1>Your dashboard lives inside your agent.</h1>
         <p class="lead">
           The base skill already does everything: publish, discover, install,
-          auto-update, telemetry — all from your Claude session, without
+          auto-update, telemetry — all from your agent session, without
           typing at a web form. This page is for when you want to look at
           numbers without typing at an agent.
         </p>
@@ -42,7 +42,7 @@ export function renderDashboardPage(c: Context<Env>) {
             </div>
           </div>
           <div class="stat">
-            <div class="stat-label">Inside Claude</div>
+            <div class="stat-label">Inside your agent</div>
             <div style="font-size:14px;color:var(--muted);margin-top:6px">
               Ask your agent <em>&ldquo;show me my depot stats&rdquo;</em> — the
               base skill fetches your live scores and renders them in-chat.

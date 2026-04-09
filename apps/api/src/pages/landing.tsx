@@ -85,7 +85,7 @@ export async function renderLanding(c: Context<Env>) {
               <>
                 Drop <code>skillhub</code> into <code>~/.claude/skills/</code>.
                 Registers, publishes, discovers, installs, auto-updates, and
-                reports telemetry — all from inside your Claude session.
+                reports telemetry — all from inside your agent session.
               </>
             }
           />

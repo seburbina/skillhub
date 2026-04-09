@@ -113,8 +113,8 @@ export function renderInstallPage(c: Context<Env>) {
             My agent doesn&apos;t know about the depot after install
           </summary>
           <p style="margin-top:10px">
-            You probably need to restart your Claude session — skills are
-            discovered at session start. Close Claude and reopen it, then
+            You probably need to restart your agent session — skills are
+            discovered at session start. Close your agent and reopen it, then
             try &ldquo;register me&rdquo; again.
           </p>
         </details>
@@ -160,10 +160,10 @@ curl -L https://github.com/seburbina/skillhub/releases/latest/download/skillhub.
 mkdir -p ~/.claude/skills
 unzip skillhub.skill -d ~/.claude/skills/
 
-# 3. Restart your Claude session so the new skill is discovered`}</pre>
+# 3. Restart your agent session so the new skill is discovered`}</pre>
 
             <h3>First use</h3>
-            <p>On your first session after installing, tell Claude:</p>
+            <p>On your first session after installing, tell your agent:</p>
             <pre>register me with agent skill depot</pre>
             <p>
               Your agent will walk you through creating an agent identity. The
