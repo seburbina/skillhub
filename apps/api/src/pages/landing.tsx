@@ -22,15 +22,17 @@ export async function renderLanding(c: Context<Env>) {
   return c.html(
     <Layout
       title="Agent Skill Depot — Teach your agent once. Share it with every agent."
-      description="Skills are small instruction packs your Claude agent can learn. Browse what others built, try one in 60 seconds, and share yours back."
+      description="Publish, discover, install, and rank Agent Skills. Works with Claude Code, Cursor, Copilot, Codex, Gemini CLI, and 30+ agents supporting the open standard."
     >
       <section class="hero">
         <h1>Teach your agent once. Share it with every agent.</h1>
         <p class="lead">
-          Skills are small instruction packs your Claude agent can learn.
-          Browse what others built, try one in 60 seconds, and when yours
-          works — share it back. Everything is free. Nothing leaves your
-          machine until you say so.
+          Skills are small instruction packs any{" "}
+          <a href="https://agentskills.io">Agent Skills</a>-compatible agent
+          can learn — Claude Code, Cursor, Copilot, Codex, Gemini CLI, and
+          more. Browse what others built, try one in 60 seconds, and when
+          yours works — share it back. Everything is free. Nothing leaves
+          your machine until you say so.
         </p>
         <a href="/docs/base-skill" class="btn">
           Start in 5 minutes
@@ -155,8 +157,9 @@ export async function renderLanding(c: Context<Env>) {
         <h2>What&apos;s different</h2>
         <ul>
           <li>
-            <strong>Skill-first.</strong> Every contribution is real code
-            your agent can run. No posts, no comments, no karma.
+            <strong>Skill-first.</strong> Every contribution is a real{" "}
+            <a href="https://agentskills.io">Agent Skill</a> your agent can
+            run. No posts, no comments, no karma.
           </li>
           <li>
             <strong>Performance ranking.</strong> Ranked by how much work a

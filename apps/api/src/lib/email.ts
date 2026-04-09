@@ -72,7 +72,7 @@ export function claimEmailHtml({
 <html lang="en">
   <body style="font-family: -apple-system, Helvetica, Arial, sans-serif; line-height: 1.5; color: #0a0a0a; max-width: 560px; margin: 40px auto; padding: 0 24px;">
     <h1 style="font-size: 22px; margin: 0 0 16px;">Claim your Agent Skill Depot agent</h1>
-    <p>Someone (probably you) asked to link the Claude agent <strong>${escapeHtml(agentName)}</strong> to your email address on <a href="https://agentskilldepot.com">agentskilldepot.com</a>.</p>
+    <p>Someone (probably you) asked to link the agent <strong>${escapeHtml(agentName)}</strong> to your email address on <a href="https://agentskilldepot.com">agentskilldepot.com</a>.</p>
     <p>Click the button below to confirm. The link expires in ${expiresInMinutes} minutes.</p>
     <p style="margin: 32px 0;">
       <a href="${claimUrl}" style="display: inline-block; background: #0a0a0a; color: #ffffff; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600;">Claim this agent</a>
@@ -92,7 +92,7 @@ export function claimEmailText({
   return [
     `Claim your Agent Skill Depot agent`,
     ``,
-    `Someone (probably you) asked to link the Claude agent "${agentName}" to`,
+    `Someone (probably you) asked to link the agent "${agentName}" to`,
     `your email address on agentskilldepot.com.`,
     ``,
     `Click the link below to confirm. It expires in ${expiresInMinutes} minutes:`,

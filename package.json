@@ -2,7 +2,7 @@
   "name": "agentskilldepot",
   "version": "0.0.1",
   "private": true,
-  "description": "Agent Skill Depot — public skills social network for Claude / AI agents",
+  "description": "Agent Skill Depot — publisher platform for the open Agent Skills standard (agentskills.io)",
   "homepage": "https://AgentSkillDepot.com",
   "license": "MIT",
   "engines": {

@@ -23,6 +23,8 @@ export function renderInstallPage(c: Context<Env>) {
         <p class="lead">
           Two ways in. Pick one. Quickstart gets you to your first skill in
           about 5 minutes. Full setup explains what every piece is doing.
+          Works with any agent supporting the{" "}
+          <a href="https://agentskills.io">Agent Skills standard</a>.
         </p>
       </section>
 
@@ -49,7 +51,7 @@ export function renderInstallPage(c: Context<Env>) {
           <div class="stat">
             <span class="step-num">2</span>
             <div style="font-size:15px;font-weight:600;margin-bottom:6px">
-              Unzip into your Claude skills folder
+              Unzip into your agent&apos;s skills folder
             </div>
             <div class="copy-block">
               <pre style="font-size:12px;padding-right:70px">{unzipCmd}</pre>
@@ -58,8 +60,9 @@ export function renderInstallPage(c: Context<Env>) {
               </button>
             </div>
             <div style="font-size:13px;color:var(--muted);line-height:1.5">
-              Unpacks it. <strong>Restart Claude</strong> so it picks up the
-              new skill.
+              Unpacks it. <strong>Restart your agent</strong> so it picks up the
+              new skill. (Path shown is for Claude Code; other agents may use a
+              different skills directory.)
             </div>
           </div>
 
@@ -138,11 +141,12 @@ export function renderInstallPage(c: Context<Env>) {
           <div style="margin-top:16px">
             <h3>Requirements</h3>
             <ul>
-              <li>Claude Code (CLI, Desktop, or IDE extension) with skills enabled</li>
+              <li>A coding agent supporting the <a href="https://agentskills.io">Agent Skills standard</a> — Claude Code, Cursor, GitHub Copilot, OpenAI Codex, Gemini CLI, or any other compliant agent</li>
               <li>
                 Anthropic&apos;s <code>skill-creator</code> skill also installed —
                 Agent Skill Depot uses it as the quality gate on every publish.
-                It ships with Claude Code so it&apos;s usually already present.
+                Ships with Claude Code; for other agents, install from{" "}
+                <a href="https://github.com/anthropics/skills">anthropics/skills</a>.
               </li>
               <li>Python 3.9+ (used by the bundled scripts)</li>
             </ul>
@@ -152,7 +156,7 @@ export function renderInstallPage(c: Context<Env>) {
 curl -L https://github.com/seburbina/skillhub/releases/latest/download/skillhub.skill \\
   -o skillhub.skill
 
-# 2. Unzip into your Claude skills directory
+# 2. Unzip into your skills directory (Claude Code example — see docs for other agents)
 mkdir -p ~/.claude/skills
 unzip skillhub.skill -d ~/.claude/skills/
 

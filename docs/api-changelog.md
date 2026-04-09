@@ -17,6 +17,14 @@ additive.
 
 ---
 
+## 2026-04-09 — Agent Skills Discovery (.well-known) + cross-vendor repositioning
+
+- `added:` `GET /.well-known/agent-skills/index.json` — discovery index per the [Cloudflare Agent Skills Discovery RFC](https://github.com/cloudflare/agent-skills-discovery-rfc) (being adopted via [agentskills/agentskills#254](https://github.com/agentskills/agentskills/pull/254)). Lists all public skills with `name`, `type`, `description`, `url`, and `digest` (SHA-256). Any spec-compliant agent can discover and install skills from AgentSkillDepot without custom integration.
+- `added:` `GET /.well-known/agent-skills/:slug.zip` — direct skill download for `.well-known` consumers. Streams the skill archive from R2 with `application/zip` Content-Type and increments `download_count`. No auth required (public discovery surface).
+- `added:` CORS enabled on all `/.well-known/agent-skills/*` routes per spec recommendation for browser-based clients.
+- `added:` `sha256_digest` column on `skill_versions` — stores the digest in `sha256:{hex}` format for `.well-known` spec compliance. Populated at publish time from the existing SHA-256 `content_hash`.
+- `changed:` All user-facing copy (landing page, install page, email templates, base skill description) repositioned from Claude-only to cross-vendor Agent Skills standard. AgentSkillDepot now references the [open standard](https://agentskills.io) and lists 30+ compatible agents.
+
 ## 2026-04-09 — Auto-rate contract for installed skills
 
 - `changed:` `POST /v1/telemetry/invocations/:id/rate` documents an **auto-rating contract**: clients SHOULD POST a rating immediately after `/end` (without prompting the user) by deriving `value` from `outcome` + `follow_up_iterations`. Mapping table added in `base-skill/skillhub/references/api-reference.md`. Endpoint shape unchanged — non-breaking. The base skill (`base-skill/skillhub/SKILL.md`) now implements this flow as the default; the once-per-session "was it helpful?" ask becomes a fallback for `outcome=unknown`.
