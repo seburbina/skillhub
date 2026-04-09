@@ -11,11 +11,16 @@
  * PR:   https://github.com/agentskills/agentskills/pull/254
  */
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { sql } from "drizzle-orm";
 import { makeDb } from "@/db";
 import type { Env } from "@/types";
 
 export const wellKnown = new Hono<Env>();
+
+// CORS on all .well-known routes — browser-based agents and CLI tools may
+// fetch from any origin (spec recommends CORS for browser-based clients).
+wellKnown.use("*", cors({ origin: "*" }));
 
 const SCHEMA_URI = "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
 
@@ -66,7 +71,10 @@ wellKnown.get("/index.json", async (c) => {
     // Download URL — publicly accessible, no auth needed for discovery.
     // Agents that want telemetry tracking should use the /v1/ API instead,
     // but for .well-known compliance we serve a direct download path.
-    url: `/.well-known/agent-skills/${r.slug}.tar.gz`,
+    // Serve as .zip — our archives are ZIP files (.skill is a ZIP).
+    // The spec says clients determine format from Content-Type header,
+    // falling back to file extension. We serve application/zip.
+    url: `/.well-known/agent-skills/${r.slug}.zip`,
     // SHA-256 digest for integrity verification per the spec.
     // Prefer the spec-format sha256_digest column; fall back to content_hash
     // (which may be a different hash algo from the publish pipeline).
@@ -146,7 +154,10 @@ wellKnown.get("/:filename", async (c) => {
     `).catch((e) => console.error("[well-known download] count bump failed:", e)),
   );
 
-  // Fetch from R2 and stream to client
+  // Fetch from R2 and stream to client.
+  // R2 objects are ZIP archives (.skill files). Serve as application/zip
+  // regardless of the requested extension — the spec says clients should
+  // determine format from Content-Type.
   const r2Object = await c.env.SKILL_BUCKET.get(row.r2_key);
   if (!r2Object) {
     console.error(`[well-known download] R2 key missing: ${row.r2_key}`);
@@ -156,10 +167,8 @@ wellKnown.get("/:filename", async (c) => {
   return new Response(r2Object.body, {
     status: 200,
     headers: {
-      "Content-Type": filename.endsWith(".tar.gz")
-        ? "application/gzip"
-        : "application/zip",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${slug}.zip"`,
       // Cache the binary for 1 hour — version changes are infrequent
       "Cache-Control": "public, max-age=3600, s-maxage=3600",
     },

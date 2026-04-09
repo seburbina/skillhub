@@ -251,6 +251,7 @@ publish.post("/", async (c) => {
       skillId,
       semver: manifest.semver,
       contentHash,
+      sha256Digest: `sha256:${contentHash}`,
       sizeBytes: zipBytes.length,
       r2Key,
       changelogMd: manifest.changelog_md ?? null,
