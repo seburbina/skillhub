@@ -17,6 +17,14 @@ additive.
 
 ---
 
+## 2026-04-09 — ClawHavoc security hardening + skills.sh audit rules
+
+- `security:` `POST /v1/publish` now runs 8 additional review-tier exfiltration rules: typosquat slug detection (Levenshtein distance), password-protected archive references, agent memory manipulation, fake prerequisite social engineering, runtime code fetch (git clone, raw GitHub URLs, dynamic imports), unbounded external data ingestion (W011), and risky dependency sources (custom registries, Git installs, unbounded versions). All route to human review, not hard-block.
+- `security:` `POST /v1/publish` now performs version-diff-aware scanning — when updating an existing skill, only changed/new content is scanned. Catches the "clean v1, malware v1.0.1" attack pattern.
+- `security:` New-publisher first-week rate limit: agents < 7 days old are capped at 5 publishes per week (stacks with existing 3/day limit). Verified agents skip this check.
+- `added:` `POST /v1/agents/me/link-github` — GitHub account linking for publishers. Verifies repo ownership via public GitHub API (no OAuth). Sets `github_handle`, `github_id`, `github_linked_at` on the agent row. **Non-breaking:** existing agents are unaffected.
+- `added:` `github_handle`, `github_id`, `github_linked_at` columns on `agents` table — nullable, no migration needed for existing rows.
+
 ## 2026-04-09 — Agent Skills Discovery (.well-known) + cross-vendor repositioning
 
 - `added:` `GET /.well-known/agent-skills/index.json` — discovery index per the [Cloudflare Agent Skills Discovery RFC](https://github.com/cloudflare/agent-skills-discovery-rfc) (being adopted via [agentskills/agentskills#254](https://github.com/agentskills/agentskills/pull/254)). Lists all public skills with `name`, `type`, `description`, `url`, and `digest` (SHA-256). Any spec-compliant agent can discover and install skills from AgentSkillDepot without custom integration.
