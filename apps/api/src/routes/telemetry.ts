@@ -6,7 +6,7 @@ import { invocations, ratings, skills } from "@/db/schema";
 import { getAgent, requireAgent } from "@/lib/auth";
 import { isNewUnverifiedAgent } from "@/lib/challenge";
 import { errorResponse } from "@/lib/http";
-import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
 import type { Env } from "@/types";
 
 export const telemetry = new Hono<Env>();
@@ -24,13 +24,110 @@ const StartBody = z.object({
   client_meta: z.record(z.string(), z.unknown()).optional(),
 });
 
+// ---------------------------------------------------------------------------
+// client_meta hardening — anti-exfiltration filter
+//
+// Telemetry is an anonymous authenticated endpoint that any installed skill
+// can call. Without filtering, a rogue skill could use client_meta as a
+// covert channel to smuggle secrets out of the session (API keys, tokens,
+// cookies, file contents) and stash them in the DB for later retrieval.
+//
+// Rules:
+//   - Reject top-level keys that name credential fields outright.
+//   - Cap depth (≤4) and total serialized size (≤8 KiB).
+//   - Strip values that look like secrets (long high-entropy strings or
+//     anything matching the existing regex scrub's block-tier patterns).
+//
+// The function returns `null` if client_meta cannot be sanitized at all
+// (too large, too deep), otherwise returns the sanitized clone.
+// ---------------------------------------------------------------------------
+
+const FORBIDDEN_META_KEY =
+  /token|secret|password|api[_-]?key|authorization|cookie|session/i;
+
+const MAX_META_DEPTH = 4;
+const MAX_META_BYTES = 8 * 1024;
+
+// Very long string values — drop them regardless of entropy. Paired with
+// the forbidden-key filter this covers the "long token in a bland key" case.
+const MAX_META_STRING_LEN = 512;
+
+const SECRETISH_PATTERNS: RegExp[] = [
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bghp_[A-Za-z0-9]{36}\b/,
+  /\bgho_[A-Za-z0-9]{36}\b/,
+  /\bsk-ant-[A-Za-z0-9_-]{20,}\b/,
+  /\bsk-[A-Za-z0-9]{20,}\b/,
+  /\bAIza[0-9A-Za-z_-]{35}\b/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+];
+
+function looksLikeSecret(s: string): boolean {
+  if (s.length > MAX_META_STRING_LEN) return true;
+  for (const rx of SECRETISH_PATTERNS) {
+    if (rx.test(s)) return true;
+  }
+  return false;
+}
+
+type SanitizeOutcome =
+  | { ok: true; value: Record<string, unknown> | null }
+  | { ok: false; reason: string };
+
+function sanitizeClientMeta(raw: unknown): SanitizeOutcome {
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, reason: "client_meta must be an object" };
+  }
+
+  const serializedLen = (() => {
+    try {
+      return JSON.stringify(raw).length;
+    } catch {
+      return Infinity;
+    }
+  })();
+  if (serializedLen > MAX_META_BYTES) {
+    return {
+      ok: false,
+      reason: `client_meta exceeds ${MAX_META_BYTES} byte limit (${serializedLen})`,
+    };
+  }
+
+  const walk = (node: unknown, depth: number): unknown => {
+    if (depth > MAX_META_DEPTH) return "<depth_limit>";
+    if (node === null) return null;
+    if (typeof node === "string") {
+      return looksLikeSecret(node) ? "<redacted>" : node;
+    }
+    if (typeof node === "number" || typeof node === "boolean") return node;
+    if (Array.isArray(node)) {
+      return node.slice(0, 64).map((item) => walk(item, depth + 1));
+    }
+    if (typeof node === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if (FORBIDDEN_META_KEY.test(key)) continue;
+        out[key] = walk(value, depth + 1);
+      }
+      return out;
+    }
+    return undefined;
+  };
+
+  const cleaned = walk(raw, 1) as Record<string, unknown>;
+  return { ok: true, value: cleaned };
+}
+
 telemetry.post("/invocations/start", async (c) => {
   const agent = getAgent(c);
   const db = makeDb(c.env);
 
   const rl = await checkRateLimit(
     db,
-    `agent:${agent.id}:telemetry`,
+    rateLimitKey("agent", agent.id, "telemetry", agent.tenantId),
     LIMITS.telemetry,
     isNewUnverifiedAgent(agent),
   );
@@ -48,6 +145,14 @@ telemetry.post("/invocations/start", async (c) => {
   }
   const body = parsed.data;
 
+  // Anti-exfiltration: telemetry client_meta is an authenticated endpoint
+  // any installed skill can call. Strip credential-shaped values before
+  // persisting so it can't be abused as a covert exfiltration channel.
+  const sanitized = sanitizeClientMeta(body.client_meta);
+  if (!sanitized.ok) {
+    return errorResponse(c, "invalid_input", sanitized.reason);
+  }
+
   const [invocation] = await db
     .insert(invocations)
     .values({
@@ -55,7 +160,7 @@ telemetry.post("/invocations/start", async (c) => {
       versionId: body.version_id,
       invokingAgentId: agent.id,
       sessionHash: body.session_hash ?? null,
-      clientMeta: body.client_meta ?? null,
+      clientMeta: sanitized.value,
     })
     .returning();
 

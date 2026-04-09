@@ -31,11 +31,21 @@ pattern = "www.agentskilldepot.com"
 zone_name = "agentskilldepot.com"
 custom_domain = true
 
+# Admin surface — read-only v1, gated by Cloudflare Access.
+# Requires: (1) DNS CNAME `admin -> agentskilldepot.com` in Cloudflare,
+# (2) Access application for `admin.agentskilldepot.com` with an
+# email-allowlist policy. See infra/DEPLOY.md.
+[[routes]]
+pattern = "admin.agentskilldepot.com"
+zone_name = "agentskilldepot.com"
+custom_domain = true
+
 # Native Cron Triggers (no Inngest needed for the MVP)
 [triggers]
 crons = [
   "13 * * * *",  # recompute-rankings, hourly at :13
   "37 * * * *",  # refresh-user-stats matview, hourly at :37
+  "7 * * * *",   # mirror-to-github, hourly at :07
 ]
 
 # Static assets (CSS, favicon, etc.) served directly from /public
@@ -56,6 +66,12 @@ AGENT_KEY_PREFIX = "skh_live_"
 VOYAGE_MODEL = "voyage-3"
 ENVIRONMENT = "production"
 SIGNED_URL_TTL = "300"
+# Anti-exfiltration LLM classifier. When "true" the publish pipeline calls
+# the Haiku classifier via apps/api/src/lib/scrub/exfiltration-llm.ts as an
+# additional review-tier pass. When "false" (default) the stub short-circuits
+# and no Anthropic API calls are made. Requires ANTHROPIC_API_KEY secret
+# before flipping to "true".
+EXFIL_LLM_ENABLED = "false"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DEV environment (preview deploys, points at the dev Neon branch + dev R2 bucket)
@@ -69,6 +85,7 @@ AGENT_KEY_PREFIX = "skh_live_"
 VOYAGE_MODEL = "voyage-3"
 ENVIRONMENT = "dev"
 SIGNED_URL_TTL = "300"
+EXFIL_LLM_ENABLED = "false"
 
 [[env.dev.r2_buckets]]
 binding = "SKILLS_BUCKET"

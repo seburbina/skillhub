@@ -7,12 +7,14 @@ import {
   skillVersions,
   skills as skillsTable,
 } from "@/db/schema";
+import { writeAudit } from "@/lib/audit";
 import { requireAgent, getAgent } from "@/lib/auth";
 import { isNewUnverifiedAgent } from "@/lib/challenge";
 import { embed, toVectorLiteral } from "@/lib/embeddings";
 import { clientIp, errorResponse } from "@/lib/http";
 import { signedDownloadUrl } from "@/lib/r2";
-import { LIMITS, checkRateLimit } from "@/lib/ratelimit";
+import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
+import { visibleSkillsPredicate } from "@/lib/visibility";
 import type { Env } from "@/types";
 
 export const skills = new Hono<Env>();
@@ -32,7 +34,7 @@ skills.get("/search", async (c) => {
   const ip = clientIp(c);
   const db = makeDb(c.env);
 
-  const rl = await checkRateLimit(db, `ip:${ip}:search`, LIMITS.search);
+  const rl = await checkRateLimit(db, rateLimitKey("ip", ip, "search"), LIMITS.search);
   if (!rl.allowed) {
     return errorResponse(c, "rate_limited", "Search rate limit exceeded.", {
       retryAfterSeconds: rl.retryAfterSeconds,
@@ -86,7 +88,12 @@ skills.get("/search", async (c) => {
            install_count, download_count, updated_at, category, tags
     FROM skills
     WHERE deleted_at IS NULL
-      AND visibility IN ('public_free', 'public_paid')
+      AND ${visibleSkillsPredicate(null)}
+      -- Anti-exfiltration filter: only surface skills whose current
+      -- version has cleared review. current_version_id is only set by
+      -- publish.ts when reviewStatus='approved', so a held-for-review
+      -- first publish leaves it NULL.
+      AND current_version_id IS NOT NULL
       ${categoryFilter}
       ${queryEmbedding ? sql`` : sql` AND (display_name ILIKE ${`%${q}%`} OR short_desc ILIKE ${`%${q}%`})`}
     ORDER BY ${orderBy}
@@ -123,7 +130,7 @@ skills.post("/suggest", async (c) => {
   const ip = clientIp(c);
   const db = makeDb(c.env);
 
-  const rl = await checkRateLimit(db, `ip:${ip}:search`, LIMITS.search);
+  const rl = await checkRateLimit(db, rateLimitKey("ip", ip, "search"), LIMITS.search);
   if (!rl.allowed) {
     return errorResponse(c, "rate_limited", "Search rate limit exceeded.", {
       retryAfterSeconds: rl.retryAfterSeconds,
@@ -163,7 +170,8 @@ skills.post("/suggest", async (c) => {
            install_count, updated_at
     FROM skills
     WHERE deleted_at IS NULL
-      AND visibility IN ('public_free', 'public_paid')
+      AND ${visibleSkillsPredicate(null)}
+      AND current_version_id IS NOT NULL
       ${queryEmbedding ? sql`` : sql` AND (display_name ILIKE ${`%${intent}%`} OR short_desc ILIKE ${`%${intent}%`})`}
     ORDER BY ${orderBy}
     LIMIT ${limit}
@@ -205,6 +213,10 @@ skills.get("/:slug", async (c) => {
     return errorResponse(c, "not_found", `No skill with slug '${slug}'.`);
   }
 
+  // Only approved versions are visible in the public profile. Pending /
+  // rejected versions (held by the anti-exfiltration filter) must not leak
+  // through this endpoint — they stay visible only to the author via the
+  // authenticated "my skills" surface.
   const versions = await db
     .select({
       id: skillVersions.id,
@@ -214,10 +226,22 @@ skills.get("/:slug", async (c) => {
       yankedAt: skillVersions.yankedAt,
       sizeBytes: skillVersions.sizeBytes,
       changelogMd: skillVersions.changelogMd,
+      contentHash: skillVersions.contentHash,
     })
     .from(skillVersions)
-    .where(eq(skillVersions.skillId, skill.id))
+    .where(
+      and(
+        eq(skillVersions.skillId, skill.id),
+        eq(skillVersions.reviewStatus, "approved"),
+      ),
+    )
     .orderBy(desc(skillVersions.publishedAt));
+
+  // If every version is still pending/rejected the skill is effectively
+  // not-yet-published from the public's perspective.
+  if (versions.length === 0) {
+    return errorResponse(c, "not_found", `No skill with slug '${slug}'.`);
+  }
 
   const latest = versions.find((v) => !v.yankedAt && !v.deprecatedAt);
 
@@ -246,6 +270,7 @@ skills.get("/:slug", async (c) => {
       yanked_at: v.yankedAt?.toISOString() ?? null,
       size_bytes: v.sizeBytes,
       changelog_md: v.changelogMd,
+      content_hash: v.contentHash,
     })),
   });
 });
@@ -292,21 +317,22 @@ skills.post("/:id/report", requireAgent, async (c) => {
   const { reason, comment } = parsed.data;
 
   // Idempotency: one report per (reporter, skill, reason) per 24h
-  // (prevents reporters from spamming the same flag)
-  // admin_notes is stored as `reporter_agent:<id>` optionally followed by
-  // \n\n<comment>, so we use a LIKE prefix match.
-  const reporterPrefix = `reporter_agent:${reporterAgent.id}`;
-  const recentDup = await db.execute<{ n: number }>(sql`
-    SELECT COUNT(*)::int AS n
-    FROM moderation_flags
-    WHERE target_type = 'skill'
-      AND target_id = ${skill.id}
-      AND reporter_user_id IS NULL
-      AND admin_notes LIKE ${reporterPrefix + "%"}
-      AND reason = ${reason}
-      AND created_at > NOW() - INTERVAL '24 hours'
-  `);
-  if (Number(recentDup.rows[0]?.n ?? 0) > 0) {
+  // (prevents reporters from spamming the same flag). Backed by the
+  // moderation_flags_dedupe_idx composite index.
+  const recentDup = await db
+    .select({ id: moderationFlags.id })
+    .from(moderationFlags)
+    .where(
+      and(
+        eq(moderationFlags.targetType, "skill"),
+        eq(moderationFlags.targetId, skill.id),
+        eq(moderationFlags.reporterAgentId, reporterAgent.id),
+        eq(moderationFlags.reason, reason),
+        sql`${moderationFlags.createdAt} > NOW() - INTERVAL '24 hours'`,
+      ),
+    )
+    .limit(1);
+  if (recentDup.length > 0) {
     return errorResponse(
       c,
       "conflict",
@@ -314,32 +340,25 @@ skills.post("/:id/report", requireAgent, async (c) => {
     );
   }
 
-  // Insert the flag — since we don't have a users system yet, we put the
-  // reporter agent id in admin_notes prefixed by 'reporter_agent:' so admins
-  // can audit. Once Phase 3 wires real user auth we'll add a reporter_agent_id
-  // column to moderation_flags.
+  // Insert the flag — reporter_agent_id is the FK; admin_notes now holds
+  // only the optional free-form comment.
   await db.insert(moderationFlags).values({
     targetType: "skill",
     targetId: skill.id,
+    reporterAgentId: reporterAgent.id,
     reason,
-    adminNotes:
-      `reporter_agent:${reporterAgent.id}` +
-      (comment ? `\n\n${comment.slice(0, 800)}` : ""),
+    adminNotes: comment ? comment.slice(0, 800) : null,
   });
 
   // Auto-quarantine: count distinct reporter agents in the last 7 days.
-  // admin_notes starts with `reporter_agent:<uuid>` (optionally followed by
-  // \n\n<comment>), so we split on the first newline AND on the prefix to
-  // extract the agent id alone before counting distinct.
   const recentReports = await db.execute<{ distinct_reporters: number }>(sql`
-    SELECT COUNT(DISTINCT split_part(split_part(admin_notes, E'\\n', 1), ':', 2))::int
-      AS distinct_reporters
-    FROM moderation_flags
-    WHERE target_type = 'skill'
-      AND target_id = ${skill.id}
-      AND status = 'open'
-      AND created_at > NOW() - (${QUARANTINE_WINDOW_DAYS} || ' days')::interval
-      AND admin_notes LIKE 'reporter_agent:%'
+    SELECT COUNT(DISTINCT reporter_agent_id)::int AS distinct_reporters
+      FROM moderation_flags
+     WHERE target_type = 'skill'
+       AND target_id = ${skill.id}
+       AND status = 'open'
+       AND reporter_agent_id IS NOT NULL
+       AND created_at > NOW() - (${QUARANTINE_WINDOW_DAYS} || ' days')::interval
   `);
   const reporters = Number(recentReports.rows[0]?.distinct_reporters ?? 0);
 
@@ -358,6 +377,25 @@ skills.post("/:id/report", requireAgent, async (c) => {
     }
     quarantined = true;
   }
+
+  c.executionCtx.waitUntil(
+    writeAudit(db, {
+      tenantId: reporterAgent.tenantId ?? null,
+      actorType: "agent",
+      actorId: reporterAgent.id,
+      action: quarantined ? "skill.quarantined" : "skill.reported",
+      targetType: "skill",
+      targetId: skill.id,
+      ip: clientIp(c),
+      userAgent: c.req.header("user-agent") ?? null,
+      metadata: {
+        slug: skill.slug,
+        reason,
+        distinct_reporters: reporters,
+        threshold: QUARANTINE_THRESHOLD,
+      },
+    }),
+  );
 
   return c.json({
     ok: true,
@@ -381,7 +419,7 @@ skills.get("/:id/versions/:semver/download", requireAgent, async (c) => {
 
   const rl = await checkRateLimit(
     db,
-    `agent:${agent.id}:download`,
+    rateLimitKey("agent", agent.id, "download", agent.tenantId),
     LIMITS.download,
     isNewUnverifiedAgent(agent),
   );
@@ -417,6 +455,17 @@ skills.get("/:id/versions/:semver/download", requireAgent, async (c) => {
   }
   if (version.yankedAt) {
     return errorResponse(c, "forbidden", `Version ${semver} has been yanked.`);
+  }
+  // Anti-exfiltration review hold — download is blocked for any version
+  // not in review_status='approved'. Authors using the authenticated
+  // "my skills" surface see their own pending versions with the findings
+  // attached; the download endpoint itself stays strict.
+  if (version.reviewStatus !== "approved") {
+    return errorResponse(
+      c,
+      "forbidden",
+      `Version ${semver} is under review and not yet available for download.`,
+    );
   }
 
   await db

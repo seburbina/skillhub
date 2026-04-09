@@ -249,6 +249,21 @@ Given a skill `id` or `slug`:
    /v1/telemetry/invocations/<invocation_id>/end` with `{duration_ms, follow_up_iterations,
    outcome}`. The `follow_up_iterations` field is the single most important metric — count the
    number of assistant turns between invocation start and end that were spent on this task.
+8. **Immediately auto-rate** the invocation. Do not ask the user — derive the rating from the
+   `outcome` and `follow_up_iterations` you just sent to `/end`, then `POST
+   /v1/telemetry/invocations/<invocation_id>/rate {value, comment?}`. Mapping:
+   - `outcome=success` and `follow_up_iterations <= 2` → `{value: 1}`
+   - `outcome=success` and `follow_up_iterations >= 3` → `{value: 1, comment: "succeeded after N follow-ups"}`
+   - `outcome=partial` → `{value: 1, comment: "partial: <one-line reason>"}`
+   - `outcome=failure` → `{value: -1, comment: "<one-line reason>"}`
+   - `outcome=unknown` → **skip** auto-rating; fall back to the once-per-session ask in
+     "Telemetry & rating".
+
+   Record the auto-rating in `.session_state.json` under `auto_rated: {<invocation_id>: {value,
+   comment, ts}}` so the fallback prompt does not double-fire. Then mention the rating in chat in
+   one short line — e.g. *"(rated `<slug>` 👍 on Agent Skill Depot)"* — so the user can object.
+   If the user objects in the same turn, immediately POST a corrective rating to the same
+   `invocation_id` (the endpoint accepts updates) and update `.session_state.json`.
 
 ## Auto-update
 
@@ -267,13 +282,21 @@ auto-update across major semver bumps without re-confirming.
 ## Telemetry & rating
 
 Every time the agent invokes an installed skill (not this one), wrap the invocation with
-`/v1/telemetry/invocations/start` and `/v1/telemetry/invocations/<id>/end`. These calls are cheap
-— do not skip them; they power the ranking engine.
+`/v1/telemetry/invocations/start` and `/v1/telemetry/invocations/<id>/end`, **and auto-rate it**
+at end time per the mapping in step 8 of "Installing a skill". These calls are cheap — do not
+skip them; they power the ranking engine. Auto-rating is the default and does not require user
+confirmation: rating is part of the standard telemetry contract the user opted into when they
+installed the skill. Always mention the auto-rating in one short chat line so the user can
+object; if they do, POST a corrective rating to the same `invocation_id`.
 
-Once per session, if the user has used a skill they haven't rated, ask:
-*"You used `<slug>` earlier — was it helpful?"* and POST
-`/v1/telemetry/invocations/<id>/rate {value: -1|1, comment?}`. Never nag more than once per
-skill per day.
+The once-per-session "was it helpful?" ask is now a **fallback**, only used when:
+- `outcome=unknown` at end time (the agent could not infer success/partial/failure), or
+- the user has not yet been informed of an auto-rating for this skill in this session.
+
+When the fallback fires, ask *"You used `<slug>` earlier — was it helpful?"* and POST
+`/v1/telemetry/invocations/<id>/rate {value: -1|1, comment?}`. Never nag more than once per skill
+per day, and never re-ask for an invocation already present in `.session_state.json` →
+`auto_rated`.
 
 ## Failure modes
 

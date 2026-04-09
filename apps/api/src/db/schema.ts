@@ -88,6 +88,26 @@ export const scrubStatusEnum = pgEnum("scrub_status", [
   "block",
 ]);
 
+/**
+ * Anti-exfiltration review status for a published skill version.
+ *
+ *   - "approved" (default) — version is publicly installable.
+ *   - "pending"            — the exfiltration filter flagged a review-tier
+ *                            finding. Version is invisible to search/download
+ *                            until a human moderator approves or rejects it.
+ *   - "rejected"           — moderator rejected after review. Same visibility
+ *                            as "pending" — publisher sees it with notes but
+ *                            public cannot install.
+ *
+ * See `apps/api/src/lib/scrub/exfiltration.ts` for the detectors that set
+ * this, and `docs/review-queue-runbook.md` for the moderator SQL.
+ */
+export const reviewStatusEnum = pgEnum("review_status", [
+  "approved",
+  "pending",
+  "rejected",
+]);
+
 export const moderationStatusEnum = pgEnum("moderation_status", [
   "open",
   "reviewing",
@@ -137,6 +157,9 @@ export const users = pgTable(
     plan: userPlanEnum("plan").notNull().default("free"),
     // MONETIZATION-RESERVED — unused in MVP
     stripeCustomerId: text("stripe_customer_id"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier. FK added
+    // to tenants(id) in Phase 2 when the tenants table exists.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -146,6 +169,7 @@ export const users = pgTable(
   },
   (t) => ({
     emailIdx: index("users_email_idx").on(t.email),
+    tenantIdx: index("users_tenant_idx").on(t.tenantId),
   }),
 );
 
@@ -164,6 +188,8 @@ export const agents = pgTable(
     reputationScore: numeric("reputation_score", { precision: 8, scale: 4 })
       .notNull()
       .default("0"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -176,6 +202,7 @@ export const agents = pgTable(
     apiKeyHashIdx: index("agents_api_key_hash_idx").on(t.apiKeyHash),
     ownerIdx: index("agents_owner_idx").on(t.ownerUserId),
     ownerNameUnq: unique("agents_owner_name_unq").on(t.ownerUserId, t.name),
+    tenantIdx: index("agents_tenant_idx").on(t.tenantId),
   }),
 );
 
@@ -218,6 +245,8 @@ export const skills = pgTable(
       .notNull()
       .default("0"),
     licenseSpdx: text("license_spdx").notNull().default("MIT"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -231,6 +260,7 @@ export const skills = pgTable(
     authorIdx: index("skills_author_idx").on(t.authorAgentId),
     visibilityIdx: index("skills_visibility_idx").on(t.visibility),
     categoryIdx: index("skills_category_idx").on(t.category),
+    tenantIdx: index("skills_tenant_idx").on(t.tenantId),
     // HNSW vector index is created in the raw SQL migration — Drizzle can't express it yet.
   }),
 );
@@ -251,11 +281,17 @@ export const skillVersions = pgTable(
     githubCommitSha: text("github_commit_sha"),
     changelogMd: text("changelog_md"),
     scrubReportId: uuid("scrub_report_id"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     publishedAt: timestamp("published_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
     deprecatedAt: timestamp("deprecated_at", { withTimezone: true }),
     yankedAt: timestamp("yanked_at", { withTimezone: true }),
+    // Anti-exfiltration review queue. Non-"approved" versions are hidden
+    // from public read paths; see reviewStatusEnum above.
+    reviewStatus: reviewStatusEnum("review_status").notNull().default("approved"),
+    reviewNotes: text("review_notes"),
   },
   (t) => ({
     skillSemverUnq: unique("skill_versions_skill_semver_unq").on(
@@ -263,6 +299,7 @@ export const skillVersions = pgTable(
       t.semver,
     ),
     skillIdx: index("skill_versions_skill_idx").on(t.skillId),
+    tenantIdx: index("skill_versions_tenant_idx").on(t.tenantId),
   }),
 );
 
@@ -293,6 +330,8 @@ export const invocations = pgTable(
     outcome: invocationOutcomeEnum("outcome"),
     rating: smallint("rating"), // -1 | 0 | 1
     clientMeta: jsonb("client_meta"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -301,6 +340,7 @@ export const invocations = pgTable(
     skillIdx: index("invocations_skill_idx").on(t.skillId),
     agentIdx: index("invocations_agent_idx").on(t.invokingAgentId),
     startedAtIdx: index("invocations_started_at_idx").on(t.startedAt),
+    tenantIdx: index("invocations_tenant_idx").on(t.tenantId),
   }),
 );
 
@@ -385,21 +425,38 @@ export const entitlements = pgTable(
 // Moderation / abuse
 // ---------------------------------------------------------------------------
 
-export const moderationFlags = pgTable("moderation_flags", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  targetType: text("target_type").notNull(), // 'skill' | 'agent' | 'user'
-  targetId: uuid("target_id").notNull(),
-  reporterUserId: uuid("reporter_user_id").references(() => users.id, {
-    onDelete: "set null",
+export const moderationFlags = pgTable(
+  "moderation_flags",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    targetType: text("target_type").notNull(), // 'skill' | 'agent' | 'user'
+    targetId: uuid("target_id").notNull(),
+    reporterUserId: uuid("reporter_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reporterAgentId: uuid("reporter_agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
+    reason: text("reason").notNull(),
+    status: moderationStatusEnum("status").notNull().default("open"),
+    adminNotes: text("admin_notes"),
+    // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
+    tenantId: uuid("tenant_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => ({
+    dedupeIdx: index("moderation_flags_dedupe_idx").on(
+      t.targetType,
+      t.targetId,
+      t.reporterAgentId,
+      t.reason,
+    ),
+    tenantIdx: index("moderation_flags_tenant_idx").on(t.tenantId),
   }),
-  reason: text("reason").notNull(),
-  status: moderationStatusEnum("status").notNull().default("open"),
-  adminNotes: text("admin_notes"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-});
+);
 
 export const rateLimitBuckets = pgTable(
   "rate_limit_buckets",
@@ -410,6 +467,80 @@ export const rateLimitBuckets = pgTable(
   },
   (t) => ({
     pk: primaryKey({ columns: [t.key, t.windowStart] }),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Audit log (Phase 0 §0.2) — append-only via RLS
+// ---------------------------------------------------------------------------
+
+/**
+ * Every mutation worth auditing writes a row here. Phase 0 wires the
+ * writeAudit() helper into the high-signal mutation endpoints; Phase 2
+ * extends to all tenant-scoped routes.
+ *
+ * RLS-enforced append-only at the database level:
+ *   - INSERT policy: USING (true) → anyone can write
+ *   - SELECT policy: USING (true) → anyone can read (Phase 2 tightens)
+ *   - NO UPDATE or DELETE policies → writes are immutable
+ *
+ * `tenant_id` is null for public-tier events. Phase 2 tightens the
+ * SELECT policy so tenant readers only see their own rows.
+ */
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: uuid("tenant_id"),
+    actorType: text("actor_type").notNull(), // 'user' | 'agent' | 'system' | 'stripe_webhook'
+    actorId: uuid("actor_id"),
+    actorEmail: text("actor_email"), // denormalized for historical searches
+    action: text("action").notNull(),
+    targetType: text("target_type"),
+    targetId: text("target_id"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    tenantAtIdx: index("audit_events_tenant_at_idx").on(t.tenantId, t.createdAt),
+    actorIdx: index("audit_events_actor_idx").on(t.actorId),
+    actionIdx: index("audit_events_action_idx").on(t.action),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tenant skill allowlist (Phase 0 §0.8) — empty schema hook
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-tenant operator-approved skill list. Empty in Phase 0. In Phase 2,
+ * the download endpoint will check this for tenant agents and reject
+ * installations of skills not on the tenant's allowlist.
+ *
+ * `tenant_id` is null for public-tier rows (which are always allowed —
+ * the allowlist is opt-in per tenant).
+ */
+export const tenantSkillAllowlist = pgTable(
+  "tenant_skill_allowlist",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: uuid("tenant_id"),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "cascade" }),
+    allowedByUserId: uuid("allowed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    allowedAt: timestamp("allowed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    skillIdx: index("tenant_skill_allowlist_skill_idx").on(t.skillId),
   }),
 );
 

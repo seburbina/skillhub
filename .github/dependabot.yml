@@ -1,0 +1,62 @@
+# Dependabot — Phase 0 §0.11
+#
+# Weekly scan for npm + GitHub Actions + pip dependency updates.
+# Security updates open PRs immediately regardless of schedule.
+# Major-version bumps get reviewed manually; minor/patch can auto-merge.
+version: 2
+
+updates:
+  # Cloudflare Worker + root workspace (pnpm)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Costa_Rica"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "npm"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      # Group all non-major drizzle/neon updates into a single PR
+      drizzle:
+        patterns:
+          - "drizzle-*"
+          - "@neondatabase/*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group all non-major hono updates
+      hono:
+        patterns:
+          - "hono"
+          - "@hono/*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Dev dependencies grouped separately
+      dev-deps:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions version pins in the workflow files
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Costa_Rica"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"

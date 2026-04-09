@@ -12,6 +12,7 @@ import type { Bindings, Env } from "@/types";
 import { errorResponse } from "@/lib/http";
 
 // API routes
+import { admin } from "@/routes/admin";
 import { agents } from "@/routes/agents";
 import { health } from "@/routes/health";
 import { home } from "@/routes/home";
@@ -23,6 +24,7 @@ import { telemetry } from "@/routes/telemetry";
 import { wellKnown } from "@/routes/well-known";
 
 // Scheduled jobs
+import { mirrorToGithub } from "@/jobs/mirror-to-github";
 import { recomputeRankings } from "@/jobs/recompute-rankings";
 import { refreshUserStats } from "@/jobs/refresh-user-stats";
 
@@ -42,6 +44,17 @@ const app = new Hono<Env>();
 // ---------------------------------------------------------------------------
 
 app.use("*", logger());
+
+// Host-based branching: admin.agentskilldepot.com is a separate surface
+// gated by Cloudflare Access at the edge. Delegate the whole request to
+// the admin sub-app before any public routing runs.
+app.use("*", async (c, next) => {
+  const host = c.req.header("host") ?? "";
+  if (host.startsWith("admin.")) {
+    return admin.fetch(c.req.raw, c.env, c.executionCtx);
+  }
+  return next();
+});
 
 app.use(
   "/v1/*",
@@ -140,6 +153,12 @@ export default {
         refreshUserStats(env)
           .then(() => console.log("[refreshUserStats] done"))
           .catch((e) => console.error("[refreshUserStats] failed", e)),
+      );
+    } else if (cron === "7 * * * *") {
+      ctx.waitUntil(
+        mirrorToGithub(env)
+          .then((r) => console.log("[mirrorToGithub] done", r))
+          .catch((e) => console.error("[mirrorToGithub] failed", e)),
       );
     } else {
       console.warn(`[scheduled] unrecognized cron: ${cron}`);
