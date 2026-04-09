@@ -158,7 +158,7 @@ wellKnown.get("/:filename", async (c) => {
   // R2 objects are ZIP archives (.skill files). Serve as application/zip
   // regardless of the requested extension — the spec says clients should
   // determine format from Content-Type.
-  const r2Object = await c.env.SKILL_BUCKET.get(row.r2_key);
+  const r2Object = await c.env.SKILLS_BUCKET.get(row.r2_key);
   if (!r2Object) {
     console.error(`[well-known download] R2 key missing: ${row.r2_key}`);
     return c.json({ error: "not_found" }, 404);
