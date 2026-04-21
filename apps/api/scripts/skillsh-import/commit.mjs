@@ -68,15 +68,17 @@ async function ensureBotAgent() {
 function uploadToR2(bundlePath, r2Key) {
   const absBundle = resolve(HERE, bundlePath);
   if (DRY) { console.log(`    [dry] wrangler r2 object put ${R2_BUCKET_NAME}/${r2Key} --file=${absBundle}`); return; }
+  const wranglerBin = process.env.WRANGLER_BIN || "pnpm";
+  const wranglerArgs = wranglerBin === "pnpm" ? ["exec", "wrangler"] : [];
   const args = [
+    ...wranglerArgs,
     "r2", "object", "put",
     `${R2_BUCKET_NAME}/${r2Key}`,
     `--file=${absBundle}`,
     "--content-type=application/zip",
-    "--remote",
   ];
   if (WRANGLER_ENV) args.push(`--env=${WRANGLER_ENV}`);
-  const res = spawnSync("wrangler", args, { stdio: "inherit" });
+  const res = spawnSync(wranglerBin, args, { stdio: "inherit" });
   if (res.status !== 0) throw new Error(`wrangler r2 put failed for ${r2Key}`);
 }
 
@@ -119,14 +121,24 @@ for (const s of manifest.skills) {
     );
     const skillId = skillRow.id;
 
-    const [versionRow] = await sql(
-      `INSERT INTO skill_versions (
-         skill_id, semver, content_hash, sha256_digest, size_bytes, r2_key, review_status
-       ) VALUES (
-         $1, $2, $3, $4, $5, $6, 'approved'
-       ) RETURNING id`,
-      [skillId, s.version, s.content_hash, `sha256:${s.content_hash}`, s.size_bytes, s.r2_key],
-    );
+    // Populate sha256_digest if the column exists on this DB (it was added
+    // with the .well-known endpoint migration — may be absent on older
+    // environments).
+    const hasDigest = await sql(
+      `SELECT 1 FROM information_schema.columns WHERE table_name='skill_versions' AND column_name='sha256_digest' LIMIT 1`,
+    ).then((r) => r.length > 0).catch(() => false);
+
+    const [versionRow] = hasDigest
+      ? await sql(
+          `INSERT INTO skill_versions (skill_id, semver, content_hash, sha256_digest, size_bytes, r2_key, review_status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'approved') RETURNING id`,
+          [skillId, s.version, s.content_hash, `sha256:${s.content_hash}`, s.size_bytes, s.r2_key],
+        )
+      : await sql(
+          `INSERT INTO skill_versions (skill_id, semver, content_hash, size_bytes, r2_key, review_status)
+           VALUES ($1, $2, $3, $4, $5, 'approved') RETURNING id`,
+          [skillId, s.version, s.content_hash, s.size_bytes, s.r2_key],
+        );
 
     await sql(`UPDATE skills SET current_version_id = $1 WHERE id = $2`, [versionRow.id, skillId]);
 
