@@ -86,6 +86,18 @@ export async function renderSkillPage(c: Context<Env>) {
         </div>
         <h1>{skill.displayName}</h1>
         <p class="lead">{skill.shortDesc}</p>
+        {skill.mirroredFrom && skill.upstreamUrl && (
+          <p
+            style="display:inline-block;padding:8px 12px;background:var(--muted-bg,#f5f5f5);border-left:3px solid var(--accent,#0066cc);border-radius:4px;font-size:14px;margin:12px 0"
+          >
+            <strong>Mirrored from {skill.mirroredFrom}</strong>
+            {skill.originalAuthor && <> · original author: {skill.originalAuthor}</>}
+            {" · "}
+            <a href={skill.upstreamUrl} rel="noopener noreferrer">upstream repo</a>
+            {" · license: "}
+            <code>{skill.licenseSpdx}</code>
+          </p>
+        )}
 
         <div class="stat-grid">
           <div class="stat">
