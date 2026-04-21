@@ -1,0 +1,966 @@
+{
+  "summary": {
+    "total_repos": 51,
+    "total_skills": 186,
+    "by_classification": {
+      "unknown": 20,
+      "permissive": 31
+    },
+    "mirrorable_skills": 130,
+    "non_mirrorable_skills": 56,
+    "failed_lookups": 0
+  },
+  "results": [
+    {
+      "repo": "vercel-labs/skills",
+      "author": "Vercel Labs",
+      "skills": [
+        "find-skills"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/vercel-labs/skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "vercel-labs/agent-skills",
+      "author": "Vercel Labs",
+      "skills": [
+        "vercel-react-best-practices",
+        "web-design-guidelines",
+        "vercel-composition-patterns",
+        "vercel-react-native-skills",
+        "deploy-to-vercel"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/vercel-labs/agent-skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "anthropics/skills",
+      "author": "Anthropic",
+      "skills": [
+        "frontend-design",
+        "skill-creator",
+        "pdf",
+        "pptx",
+        "docx",
+        "xlsx",
+        "webapp-testing",
+        "canvas-design",
+        "mcp-builder",
+        "doc-coauthoring",
+        "theme-factory",
+        "brand-guidelines",
+        "internal-comms",
+        "slack-gif-creator",
+        "template-skill",
+        "algorithmic-art",
+        "web-artifacts-builder"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/anthropics/skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "soultrace-ai/soultrace-skill",
+      "author": "Soultrace AI",
+      "skills": [
+        "soultrace"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/soultrace-ai/soultrace-skill",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "remotion-dev/skills",
+      "author": "Remotion",
+      "skills": [
+        "remotion-best-practices"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/remotion-dev/skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "microsoft/azure-skills",
+      "author": "Microsoft",
+      "skills": [
+        "microsoft-foundry",
+        "azure-quotas",
+        "azure-upgrade",
+        "azure-cost-optimization",
+        "azure-enterprise-infra-planner",
+        "azure-kubernetes",
+        "azure-cost"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/microsoft/azure-skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "microsoft/github-copilot-for-azure",
+      "author": "Microsoft",
+      "skills": [
+        "azure-ai",
+        "azure-cost-optimization",
+        "microsoft-foundry",
+        "azure-messaging",
+        "azure-hosted-copilot-sdk",
+        "azure-observability",
+        "azure-compute",
+        "azure-cloud-migrate",
+        "azure-postgres"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/microsoft/GitHub-Copilot-for-Azure",
+      "license_spdx": "NOASSERTION",
+      "license_name": "Other",
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "microsoft/playwright-cli",
+      "author": "Microsoft",
+      "skills": [
+        "playwright-cli"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/microsoft/playwright-cli",
+      "license_spdx": "Apache-2.0",
+      "license_name": "Apache License 2.0",
+      "license_url": "https://api.github.com/licenses/apache-2.0",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "vercel-labs/agent-browser",
+      "author": "Vercel Labs",
+      "skills": [
+        "agent-browser",
+        "dogfood"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/vercel-labs/agent-browser",
+      "license_spdx": "Apache-2.0",
+      "license_name": "Apache License 2.0",
+      "license_url": "https://api.github.com/licenses/apache-2.0",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "author": "Next Level Builder",
+      "skills": [
+        "ui-ux-pro-max"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "obra/superpowers",
+      "author": "Obra (Jesse Vincent)",
+      "skills": [
+        "brainstorming",
+        "using-superpowers",
+        "systematic-debugging",
+        "writing-plans",
+        "test-driven-development",
+        "requesting-code-review",
+        "executing-plans",
+        "subagent-driven-development",
+        "verification-before-completion",
+        "receiving-code-review",
+        "writing-skills",
+        "dispatching-parallel-agents",
+        "using-git-worktrees",
+        "finishing-a-development-branch"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/obra/superpowers",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "supabase/agent-skills",
+      "author": "Supabase",
+      "skills": [
+        "supabase-postgres-best-practices",
+        "supabase"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/supabase/agent-skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "skillssh/skills",
+      "author": "SkillsHub",
+      "skills": [
+        "ai-image-generation"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/inference-sh/skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "shadcn/ui",
+      "author": "shadcn",
+      "skills": [
+        "shadcn"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/shadcn-ui/ui",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "coreyhaines31/marketingskills",
+      "author": "Corey Haines",
+      "skills": [
+        "seo-audit",
+        "copywriting",
+        "marketing-psychology",
+        "social-content",
+        "content-strategy",
+        "programmatic-seo",
+        "pricing-strategy",
+        "marketing-ideas",
+        "product-marketing-context",
+        "copy-editing",
+        "analytics-tracking",
+        "page-cro",
+        "launch-strategy",
+        "schema-markup",
+        "email-sequence",
+        "paid-ads",
+        "competitor-alternatives",
+        "onboarding-cro",
+        "form-cro",
+        "referral-program",
+        "ai-seo",
+        "cold-email",
+        "ad-creative",
+        "churn-prevention",
+        "site-architecture",
+        "sales-enablement",
+        "revops",
+        "lead-magnets"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/coreyhaines31/marketingskills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "roin-orca/skills",
+      "author": "Roin Orca",
+      "skills": [
+        "simple"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/roin-orca/skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "pbakaus/impeccable",
+      "author": "Peter Bakaus",
+      "skills": [
+        "polish",
+        "critique",
+        "bolder",
+        "delight",
+        "distill",
+        "quieter",
+        "typeset",
+        "overdrive",
+        "normalize",
+        "extract",
+        "teach-impeccable",
+        "arrange",
+        "impeccable",
+        "shape",
+        "layout"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/pbakaus/impeccable",
+      "license_spdx": "Apache-2.0",
+      "license_name": "Apache License 2.0",
+      "license_url": "https://api.github.com/licenses/apache-2.0",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "browser-use/browser-use",
+      "author": "Browser Use",
+      "skills": [
+        "browser-use"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/browser-use/browser-use",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "vercel-labs/next-skills",
+      "author": "Vercel Labs",
+      "skills": [
+        "next-best-practices",
+        "next-cache-components"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/vercel-labs/next-skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "larksuite/cli",
+      "author": "Larksuite",
+      "skills": [
+        "lark-doc",
+        "lark-wiki",
+        "lark-event",
+        "lark-approval",
+        "lark-slides"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/larksuite/cli",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "xixu-me/skills",
+      "author": "Xixi",
+      "skills": [
+        "github-actions-docs",
+        "openclaw-secure-linux-cloud",
+        "readme-i18n"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/xixu-me/skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "juliusbrussee/caveman",
+      "author": "Julius Brussee",
+      "skills": [
+        "caveman",
+        "caveman-commit",
+        "caveman-review",
+        "caveman-compress",
+        "caveman-help"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/JuliusBrussee/caveman",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "sleekdotdesign/agent-skills",
+      "author": "Sleek Design",
+      "skills": [
+        "sleek-design-mobile-apps"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/sleekdotdesign/agent-skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "arvindrk/extract-design-system",
+      "author": "Arvind R",
+      "skills": [
+        "extract-design-system"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/arvindrk/extract-design-system",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "squirrelscan/skills",
+      "author": "SquirrelScan",
+      "skills": [
+        "audit-website"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/squirrelscan/skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "better-auth/skills",
+      "author": "Better Auth",
+      "skills": [
+        "better-auth-best-practices"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/better-auth/skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "google-labs-code/stitch-skills",
+      "author": "Google Labs",
+      "skills": [
+        "react:components",
+        "design-md",
+        "stitch-loop",
+        "enhance-prompt",
+        "shadcn-ui",
+        "remotion"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/google-labs-code/stitch-skills",
+      "license_spdx": "Apache-2.0",
+      "license_name": "Apache License 2.0",
+      "license_url": "https://api.github.com/licenses/apache-2.0",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "firecrawl/cli",
+      "author": "Firecrawl",
+      "skills": [
+        "firecrawl",
+        "firecrawl-scrape",
+        "firecrawl-search"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/firecrawl/cli",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "lllllllama/ai-paper-reproduction-skill",
+      "author": "Paper Reproduction",
+      "skills": [
+        "paper-context-resolver"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/lllllllama/ai-research-workflow-skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "hugmouse/skills",
+      "author": "Hugo Mouse",
+      "skills": [
+        "value"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/hugmouse/skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "wshobson/agents",
+      "author": "W.S. Hobson",
+      "skills": [
+        "tailwind-design-system",
+        "typescript-advanced-types",
+        "nodejs-backend-patterns"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/wshobson/agents",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "anthropics/claude-code",
+      "author": "Anthropic",
+      "skills": [
+        "frontend-design"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/anthropics/claude-code",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "expo/skills",
+      "author": "Expo",
+      "skills": [
+        "building-native-ui",
+        "native-data-fetching",
+        "expo-tailwind-setup",
+        "upgrading-expo",
+        "expo-cicd-workflows",
+        "expo-api-routes",
+        "expo-deployment"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/expo/skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "currents-dev/playwright-best-practices-skill",
+      "author": "Currents",
+      "skills": [
+        "playwright-best-practices"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/currents-dev/playwright-best-practices-skill",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "mattpocock/skills",
+      "author": "Matt Pocock",
+      "skills": [
+        "grill-me"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/mattpocock/skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "firebase/agent-skills",
+      "author": "Firebase",
+      "skills": [
+        "firebase-basics",
+        "firebase-auth-basics",
+        "firebase-hosting-basics",
+        "firebase-ai-logic",
+        "firebase-app-hosting-basics",
+        "firebase-data-connect",
+        "firebase-firestore-standard",
+        "developing-genkit-js",
+        "firebase-firestore-enterprise-native-mode",
+        "developing-genkit-dart"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/firebase/agent-skills",
+      "license_spdx": "Apache-2.0",
+      "license_name": "Apache License 2.0",
+      "license_url": "https://api.github.com/licenses/apache-2.0",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "get-convex/agent-skills",
+      "author": "Convex",
+      "skills": [
+        "convex-quickstart",
+        "convex-setup-auth"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/get-convex/agent-skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "neondatabase/agent-skills",
+      "author": "Neon",
+      "skills": [
+        "neon-postgres"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/neondatabase/agent-skills",
+      "license_spdx": "Apache-2.0",
+      "license_name": "Apache License 2.0",
+      "license_url": "https://api.github.com/licenses/apache-2.0",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "github/awesome-copilot",
+      "author": "GitHub",
+      "skills": [
+        "git-commit"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/github/awesome-copilot",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "charon-fan/agent-playbook",
+      "author": "Charon Fan",
+      "skills": [
+        "self-improving-agent"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/zhaono1/agent-playbook",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "leonxlnx/taste-skill",
+      "author": "Leon X",
+      "skills": [
+        "design-taste-frontend",
+        "high-end-visual-design",
+        "redesign-existing-projects",
+        "minimalist-ui",
+        "full-output-enforcement"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/Leonxlnx/taste-skill",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "pexoai/pexo-skills",
+      "author": "Pexo AI",
+      "skills": [
+        "pexo-agent"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/pexoai/pexo-skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "resciencelab/opc-skills",
+      "author": "ReScience Lab",
+      "skills": [
+        "seo-geo"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/ReScienceLab/opc-skills",
+      "license_spdx": "Apache-2.0",
+      "license_name": "Apache License 2.0",
+      "license_url": "https://api.github.com/licenses/apache-2.0",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "emilkowalski/skill",
+      "author": "Emil Kowalski",
+      "skills": [
+        "emil-design-eng"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/emilkowalski/skill",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "kepano/obsidian-skills",
+      "author": "Kepano",
+      "skills": [
+        "obsidian-markdown",
+        "obsidian-bases"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/kepano/obsidian-skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "googleworkspace/cli",
+      "author": "Google Workspace",
+      "skills": [
+        "gws-gmail",
+        "gws-drive",
+        "gws-docs",
+        "gws-sheets",
+        "gws-calendar"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/googleworkspace/cli",
+      "license_spdx": "Apache-2.0",
+      "license_name": "Apache License 2.0",
+      "license_url": "https://api.github.com/licenses/apache-2.0",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "jimliu/baoyu-skills",
+      "author": "Jimliu",
+      "skills": [
+        "baoyu-post-to-wechat"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/JimLiu/baoyu-skills",
+      "license_spdx": null,
+      "license_name": null,
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "vercel/turborepo",
+      "author": "Vercel",
+      "skills": [
+        "turborepo"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/vercel/turborepo",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "vercel/ai",
+      "author": "Vercel",
+      "skills": [
+        "ai-sdk"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/vercel/ai",
+      "license_spdx": "NOASSERTION",
+      "license_name": "Other",
+      "license_url": null,
+      "classification": "unknown",
+      "can_mirror": false
+    },
+    {
+      "repo": "hyf0/vue-skills",
+      "author": "Hyf0",
+      "skills": [
+        "vue-best-practices"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/vuejs-ai/skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    },
+    {
+      "repo": "antfu/skills",
+      "author": "Antfu (Anthony Fu)",
+      "skills": [
+        "vue"
+      ],
+      "fetched": true,
+      "error": null,
+      "archived": false,
+      "html_url": "https://github.com/antfu/skills",
+      "license_spdx": "MIT",
+      "license_name": "MIT License",
+      "license_url": "https://api.github.com/licenses/mit",
+      "classification": "permissive",
+      "can_mirror": true
+    }
+  ]
+}

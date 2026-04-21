@@ -250,6 +250,12 @@ export const skills = pgTable(
       .notNull()
       .default("0"),
     licenseSpdx: text("license_spdx").notNull().default("MIT"),
+    // Mirrored-source attribution. Non-null when the skill was imported from
+    // an external directory (e.g. skills.sh). The triple identifies the
+    // upstream so we can credit the original author and link back.
+    upstreamUrl: text("upstream_url"),
+    originalAuthor: text("original_author"),
+    mirroredFrom: text("mirrored_from"), // e.g. "skills.sh"
     // ENTERPRISE-RESERVED (Phase 0 §0.4) — null = public tier.
     tenantId: uuid("tenant_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
