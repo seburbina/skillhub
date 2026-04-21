@@ -84,6 +84,11 @@ EXFIL_LLM_ENABLED = "false"
 # ─────────────────────────────────────────────────────────────────────────────
 [env.dev]
 name = "skillhub-dev"
+# Account has a 5-cron limit across all Workers; prod uses 3. Dev doesn't
+# need the prod schedulers (rankings/user-stats/mirror), so we clear them
+# for this env to stay under the limit.
+[env.dev.triggers]
+crons = []
 
 [env.dev.vars]
 APP_URL = "https://skillhub-dev.workers.dev"
