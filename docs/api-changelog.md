@@ -25,6 +25,13 @@ additive.
 - `added:` Unit tests for the admin-api bearer gate (missing header, wrong scheme, wrong value same/different length, missing config).
 - `changed:` `GET /v1/leaderboard/users` excludes mirror-bot agents (`owner_user_id IS NULL AND name LIKE '%-mirror'`) so the skills-sh-mirror bot doesn't inflate the publisher leaderboard.
 
+## 2026-04-21 — Mirror lifecycle endpoints + fuzzy import recovery
+
+- `added:` `POST /v1/admin/yank-mirrored` — soft-delete every mirrored skill sourced from a given `upstream_url` (DMCA / author-opt-out flow). Body `{upstream_url, reason?}`. Returns yanked slugs; R2 objects are retained for audit and must be purged separately.
+- `added:` `POST /v1/admin/classify-mirrored` — AI-classify `category` + `tags` for mirrored skills that lack them, using Workers AI (`@cf/meta/llama-3.1-8b-instruct`). Fan-out via `ctx.waitUntil`, capped by `batch_size` (default 10, max 50). Restores mirrored skills to category-filter and tag-page discovery paths.
+- `changed:` `scripts/skillsh-import/prepare.mjs` — `findSkillDir` now matches case-insensitively and treats `-` / `_` / other separators as equivalent. Falls back to reading each candidate directory's `SKILL.md` frontmatter `name` for repos that name their folders differently from the skills.sh slug. Recovers 10 skills that were silently skipped in the original import.
+- `removed:` `apps/api/scripts/embed-mirror-batch.mjs` — superseded by `POST /v1/admin/reembed-all`. The Worker route embeds via `env.AI` (free), runs inside the same isolate, and doesn't require a Voyage key.
+
 ## 2026-04-21 — Cloudflare Workers AI embeddings + admin API
 
 - `changed:` Embedding backend switched from Voyage AI to Cloudflare Workers AI (`@cf/baai/bge-large-en-v1.5`, 1024-dim — schema-compatible). Free tier (10K neurons/day) covers expected volume; no credit card required. Voyage retained as a fallback when `env.AI` is absent (offline tooling).
