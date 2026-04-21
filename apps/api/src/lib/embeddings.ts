@@ -15,6 +15,8 @@
  * voyage-3 for Voyage — same shape).
  */
 
+import { readEmbeddingCache, writeEmbeddingCache } from "./embedding-cache";
+
 const EXPECTED_DIM = 1024;
 const DEFAULT_CF_MODEL = "@cf/baai/bge-large-en-v1.5";
 const VOYAGE_API = "https://api.voyageai.com/v1/embeddings";
@@ -28,7 +30,41 @@ export interface EmbeddingEnv {
   CF_AI_EMBEDDING_MODEL?: string;
 }
 
+/**
+ * Embed text. For `inputType === "query"` we consult a per-colo cache
+ * first (24h TTL, keyed by SHA-256 of lowercased-trimmed text) so that
+ * repeat searches for the same terms skip the Workers-AI hop entirely.
+ * Document embeddings are NOT cached — they're one-shot work that
+ * happens at publish / reembed time, not per-request.
+ */
 export async function embed(
+  text: string,
+  inputType: EmbeddingInputType,
+  env: EmbeddingEnv,
+): Promise<number[]> {
+  const model = resolveModel(env);
+
+  if (inputType === "query") {
+    const hit = await readEmbeddingCache(text, "query", model);
+    if (hit) return hit;
+  }
+
+  const vec = await embedUncached(text, inputType, env);
+
+  if (inputType === "query") {
+    // Fire-and-forget — cache write must not block the hot path.
+    void writeEmbeddingCache(text, "query", model, vec);
+  }
+
+  return vec;
+}
+
+function resolveModel(env: EmbeddingEnv): string {
+  if (env.AI) return env.CF_AI_EMBEDDING_MODEL || DEFAULT_CF_MODEL;
+  return env.VOYAGE_MODEL || "voyage-3";
+}
+
+async function embedUncached(
   text: string,
   inputType: EmbeddingInputType,
   env: EmbeddingEnv,
