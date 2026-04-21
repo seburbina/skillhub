@@ -13,11 +13,19 @@
  * Required env:
  *   DATABASE_URL          Neon connection string
  *   R2_BUCKET_NAME        e.g. skillhub-skills-prod or skillhub-skills-dev
- *   WRANGLER_ENV          e.g. production or dev  (passed to `wrangler r2 object put --env`)
+ *   WRANGLER_ENV          Optional. Pass `dev` to target [env.dev] in
+ *                         wrangler.toml. Leave UNSET for production —
+ *                         wrangler.toml does not declare [env.production],
+ *                         prod is the top-level (default) environment.
  *
  * Usage:
- *   DATABASE_URL=... R2_BUCKET_NAME=... WRANGLER_ENV=dev node scripts/skillsh-import/commit.mjs
- *   add --dry-run to skip R2 + DB writes (prints what it would do)
+ *   # dev
+ *   DATABASE_URL=... R2_BUCKET_NAME=skillhub-skills-dev WRANGLER_ENV=dev \
+ *     node scripts/skillsh-import/commit.mjs
+ *   # prod (no WRANGLER_ENV)
+ *   DATABASE_URL=... R2_BUCKET_NAME=skillhub-skills-prod \
+ *     node scripts/skillsh-import/commit.mjs
+ *   # add --dry-run to skip R2 + DB writes (prints what it would do)
  */
 import { neon } from "@neondatabase/serverless";
 import { execSync, spawnSync } from "node:child_process";

@@ -25,9 +25,17 @@ Mirrors permissively-licensed skills from the [skills.sh](https://skills.sh) dir
 # Phase A
 node scripts/skillsh-import/prepare.mjs
 
-# Phase B (dry run first!)
-node scripts/skillsh-import/commit.mjs --dry-run
-DATABASE_URL=postgres://... R2_BUCKET_NAME=skillhub-skills-prod WRANGLER_ENV=production \
+# Phase B — dev (dry run first!)
+DATABASE_URL=postgres://... R2_BUCKET_NAME=skillhub-skills-dev WRANGLER_ENV=dev \
+  node scripts/skillsh-import/commit.mjs --dry-run
+DATABASE_URL=postgres://... R2_BUCKET_NAME=skillhub-skills-dev WRANGLER_ENV=dev \
+  node scripts/skillsh-import/commit.mjs
+
+# Phase B — prod (leave WRANGLER_ENV unset — wrangler.toml has no [env.production],
+# prod is the top-level/default environment)
+DATABASE_URL=postgres://... R2_BUCKET_NAME=skillhub-skills-prod \
+  node scripts/skillsh-import/commit.mjs --dry-run
+DATABASE_URL=postgres://... R2_BUCKET_NAME=skillhub-skills-prod \
   node scripts/skillsh-import/commit.mjs
 ```
 
