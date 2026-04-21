@@ -70,9 +70,27 @@ function cloneOrUpdate(repo) {
   return dir;
 }
 
-/** Find a directory named exactly `slug` anywhere inside `root`, preferring shallow matches. */
+/** Canonicalize a name for fuzzy directory matching: lowercase, replace
+ *  non-alphanumeric with a single separator, trim. "Use_case Study" → "use-case-study". */
+function canonicalize(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+/**
+ * Find a directory matching `slug` anywhere inside `root`. Prefers:
+ *   1. Exact basename match at shallowest depth.
+ *   2. Canonicalized match (case-insensitive, '-'/'_' interchangeable) at
+ *      shallowest depth.
+ *   3. Canonicalized match on a SKILL.md frontmatter `name` field (some
+ *      repos name their directories differently from the skills.sh slug).
+ * Returns null if no candidate found.
+ */
 function findSkillDir(root, slug) {
-  const hits = [];
+  const canonSlug = canonicalize(slug);
+  const exact = [];
+  const fuzzy = [];
+  const byFrontmatter = [];
+
   function walk(dir, depth) {
     if (depth > 4) return;
     let entries;
@@ -81,13 +99,47 @@ function findSkillDir(root, slug) {
       if (!e.isDirectory()) continue;
       if (e.name === ".git" || e.name === "node_modules") continue;
       const full = join(dir, e.name);
-      if (e.name === slug) hits.push({ path: full, depth });
+      if (e.name === slug) exact.push({ path: full, depth });
+      else if (canonicalize(e.name) === canonSlug) fuzzy.push({ path: full, depth });
+      else {
+        // Check SKILL.md frontmatter 'name' only for reasonably shallow
+        // dirs to keep this cheap.
+        if (depth <= 3) {
+          const skillMd = join(full, "SKILL.md");
+          if (existsSync(skillMd)) {
+            try {
+              const fm = readSkillFrontmatterAt(skillMd);
+              if (fm?.name && canonicalize(fm.name) === canonSlug) {
+                byFrontmatter.push({ path: full, depth });
+              }
+            } catch { /* ignore */ }
+          }
+        }
+      }
       walk(full, depth + 1);
     }
   }
   walk(root, 0);
-  hits.sort((a, b) => a.depth - b.depth);
-  return hits[0]?.path ?? null;
+  const pool = exact.length > 0 ? exact : fuzzy.length > 0 ? fuzzy : byFrontmatter;
+  pool.sort((a, b) => a.depth - b.depth);
+  return pool[0]?.path ?? null;
+}
+
+/** Lightweight frontmatter reader used by findSkillDir (parse reduced here
+ *  to avoid forward-reference to readSkillFrontmatter defined later). */
+function readSkillFrontmatterAt(path) {
+  const txt = readFileSync(path, "utf8");
+  const m = /^---\n([\s\S]*?)\n---/m.exec(txt);
+  if (!m) return null;
+  const out = {};
+  for (const line of m[1].split("\n")) {
+    const kv = /^\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:\s*(.*?)\s*$/.exec(line);
+    if (!kv) continue;
+    let val = kv[2];
+    if ((val.startsWith("\"") && val.endsWith("\"")) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1);
+    out[kv[1].toLowerCase()] = val;
+  }
+  return out;
 }
 
 /** Locate the LICENSE file at repo root. */
