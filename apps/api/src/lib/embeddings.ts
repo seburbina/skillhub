@@ -1,28 +1,82 @@
 /**
- * Voyage AI embedding client. Pure fetch — works on edge runtimes natively.
+ * Embedding client — prefers Cloudflare Workers AI, falls back to Voyage.
+ *
+ * Workers AI (@cf/baai/bge-large-en-v1.5) returns 1024-dim vectors, which
+ * matches the `skills.embedding vector(1024)` column exactly. It's a Worker
+ * binding (env.AI), no API key management, and the free tier covers our
+ * traffic (10K neurons/day; ~130 calls/day free).
+ *
+ * Voyage is retained as a fallback so that:
+ *   - Local/offline tooling (scripts/embed-mirror-batch.mjs) can still run
+ *     by setting VOYAGE_API_KEY and pointing at the prod DB.
+ *   - A future switch back is one code change, not a schema migration.
+ *
+ * Dimension is fixed at 1024 for both backends (bge-large-en-v1.5 for CF,
+ * voyage-3 for Voyage — same shape).
  */
-const VOYAGE_API = "https://api.voyageai.com/v1/embeddings";
+
 const EXPECTED_DIM = 1024;
+const DEFAULT_CF_MODEL = "@cf/baai/bge-large-en-v1.5";
+const VOYAGE_API = "https://api.voyageai.com/v1/embeddings";
 
 export type EmbeddingInputType = "query" | "document";
+
+export interface EmbeddingEnv {
+  AI?: Ai;
+  VOYAGE_API_KEY?: string;
+  VOYAGE_MODEL?: string;
+  CF_AI_EMBEDDING_MODEL?: string;
+}
 
 export async function embed(
   text: string,
   inputType: EmbeddingInputType,
-  env: { VOYAGE_API_KEY: string; VOYAGE_MODEL: string },
+  env: EmbeddingEnv,
 ): Promise<number[]> {
-  if (!env.VOYAGE_API_KEY) {
-    throw new Error("VOYAGE_API_KEY is not configured.");
+  if (env.AI) {
+    return embedViaWorkersAI(text, env);
   }
+  if (env.VOYAGE_API_KEY) {
+    return embedViaVoyage(text, inputType, env.VOYAGE_API_KEY, env.VOYAGE_MODEL);
+  }
+  throw new Error(
+    "No embedding backend configured — add an [ai] binding to wrangler.toml (preferred) or set VOYAGE_API_KEY.",
+  );
+}
+
+async function embedViaWorkersAI(text: string, env: EmbeddingEnv): Promise<number[]> {
+  const model = env.CF_AI_EMBEDDING_MODEL || DEFAULT_CF_MODEL;
+  // Workers AI's embeddings output is `{ shape, data: number[][] }` where
+  // each inner array is one embedding. Type casts because the `Ai` binding
+  // returns a loose `AiTextEmbeddingsOutput` from @cloudflare/workers-types.
+  const res = (await env.AI!.run(model as never, { text: [text] } as never)) as {
+    shape?: number[];
+    data?: number[][];
+  };
+  const vec = res?.data?.[0];
+  if (!vec || vec.length !== EXPECTED_DIM) {
+    throw new Error(
+      `Workers AI returned unexpected shape: got length ${vec?.length ?? "undefined"}, expected ${EXPECTED_DIM} (model=${model})`,
+    );
+  }
+  return vec;
+}
+
+async function embedViaVoyage(
+  text: string,
+  inputType: EmbeddingInputType,
+  apiKey: string,
+  model: string | undefined,
+): Promise<number[]> {
   const res = await fetch(VOYAGE_API, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${env.VOYAGE_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       input: [text],
-      model: env.VOYAGE_MODEL || "voyage-3",
+      model: model || "voyage-3",
       input_type: inputType,
     }),
   });
@@ -30,9 +84,7 @@ export async function embed(
     const errText = await res.text().catch(() => "");
     throw new Error(`Voyage API error (${res.status}): ${errText}`);
   }
-  const json = (await res.json()) as {
-    data?: Array<{ embedding?: number[] }>;
-  };
+  const json = (await res.json()) as { data?: Array<{ embedding?: number[] }> };
   const embedding = json.data?.[0]?.embedding;
   if (!embedding || embedding.length !== EXPECTED_DIM) {
     throw new Error(

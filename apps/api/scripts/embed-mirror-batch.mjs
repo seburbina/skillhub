@@ -11,6 +11,13 @@
  *   DATABASE_URL       Neon connection string
  *   VOYAGE_API_KEY     Voyage AI key (same secret the Worker uses)
  *   VOYAGE_MODEL       Optional. Defaults to voyage-3.
+ *   VOYAGE_RPM         Optional. Defaults to 3 (free tier). Set to 300+
+ *                      once a payment method is on file.
+ *
+ * NOTE: If you've deployed the Workers AI binding (wrangler.toml [ai]),
+ * prefer calling `POST /v1/admin/reembed-all` on the Worker instead — it
+ * uses env.AI and is free. This Node script is the Voyage fallback for
+ * contexts where the Worker isn't reachable.
  *
  * Usage:
  *   DATABASE_URL=... VOYAGE_API_KEY=... node scripts/embed-mirror-batch.mjs
@@ -59,7 +66,14 @@ console.log(`[embed-mirror-batch] ${rows.length} mirrored skill(s) without embed
 if (DRY) process.exit(0);
 if (rows.length === 0) process.exit(0);
 
+// Voyage rate limits: paid tier is generous; free tier is 3 RPM / 10K TPM.
+// Override with VOYAGE_RPM env (e.g. 300 for paid).
+const RPM = Number(process.env.VOYAGE_RPM) || 3;
+const MIN_INTERVAL_MS = Math.ceil(60_000 / RPM) + 500; // +500ms safety margin
+console.log(`[embed-mirror-batch] pacing at ${RPM} RPM (${MIN_INTERVAL_MS}ms between requests)`);
+
 let ok = 0, fail = 0;
+let lastCallAt = 0;
 for (const row of rows) {
   const corpus = [
     row.display_name,
@@ -68,19 +82,35 @@ for (const row of rows) {
     (row.tags ?? []).join(" "),
     row.category ?? "",
   ].filter(Boolean).join("\n").slice(0, 8000);
-  try {
-    const vec = await embed(corpus);
-    await sql(
-      `UPDATE skills SET embedding = $1::vector, updated_at = NOW() WHERE id = $2`,
-      [toVectorLiteral(vec), row.id],
-    );
-    ok++;
-    process.stdout.write(`  ✓ ${row.display_name.slice(0, 40).padEnd(40)} (${ok}/${rows.length})\n`);
-  } catch (e) {
-    fail++;
-    console.warn(`  ✗ ${row.display_name}: ${e.message}`);
-    // small backoff on rate-limit-ish errors
-    if (/429|rate/i.test(e.message)) await new Promise((r) => setTimeout(r, 2000));
+
+  // Rate-limit: wait until MIN_INTERVAL_MS has passed since the last call.
+  const wait = MIN_INTERVAL_MS - (Date.now() - lastCallAt);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+
+  let attempt = 0;
+  while (attempt < 5) {
+    attempt++;
+    lastCallAt = Date.now();
+    try {
+      const vec = await embed(corpus);
+      await sql(
+        `UPDATE skills SET embedding = $1::vector, updated_at = NOW() WHERE id = $2`,
+        [toVectorLiteral(vec), row.id],
+      );
+      ok++;
+      process.stdout.write(`  ✓ ${row.display_name.slice(0, 40).padEnd(40)} (${ok}/${rows.length})\n`);
+      break;
+    } catch (e) {
+      if (/429|rate/i.test(e.message) && attempt < 5) {
+        const backoff = Math.min(60_000, MIN_INTERVAL_MS * attempt * 2);
+        process.stdout.write(`  … 429 on ${row.display_name}, backing off ${backoff}ms (retry ${attempt})\n`);
+        await new Promise((r) => setTimeout(r, backoff));
+        continue;
+      }
+      fail++;
+      console.warn(`  ✗ ${row.display_name}: ${e.message.slice(0, 150)}`);
+      break;
+    }
   }
 }
 console.log(`\n[embed-mirror-batch] ok=${ok} fail=${fail}`);
