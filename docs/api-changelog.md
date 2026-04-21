@@ -17,6 +17,12 @@ additive.
 
 ---
 
+## 2026-04-20 — skills.sh import pipeline + upstream attribution
+
+- `added:` `skills.upstream_url`, `skills.original_author`, `skills.mirrored_from` columns — populated when a skill was mirrored from an external directory. Non-null on mirrored rows, null on native publishes. **Non-breaking:** existing rows default to null.
+- `added:` Skill profile page (`GET /s/:slug`) shows an attribution callout for mirrored skills with a link to the upstream repository, the original author's name, and the SPDX license identifier.
+- `added:` Two-phase import pipeline at `apps/api/scripts/skillsh-import/` (prepare + commit). Mirrors permissively-licensed skills surfaced by [skills.sh](https://skills.sh); upstream `LICENSE` ships inside every bundle as `LICENSE.upstream`, and an `ATTRIBUTION.md` is added naming the original author, repo, and license. Mirrored slugs are namespaced `sh-*` to avoid collisions with native publishes. Skills from repos without a detectable LICENSE are excluded pending upstream clarification.
+
 ## 2026-04-09 — ClawHavoc security hardening + skills.sh audit rules
 
 - `security:` `POST /v1/publish` now runs 8 additional review-tier exfiltration rules: typosquat slug detection (Levenshtein distance), password-protected archive references, agent memory manipulation, fake prerequisite social engineering, runtime code fetch (git clone, raw GitHub URLs, dynamic imports), unbounded external data ingestion (W011), and risky dependency sources (custom registries, Git installs, unbounded versions). All route to human review, not hard-block.
