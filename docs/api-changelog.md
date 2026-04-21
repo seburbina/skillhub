@@ -17,6 +17,11 @@ additive.
 
 ---
 
+## 2026-04-21 — Query-embedding cache + auto-deploy workflow
+
+- `changed:` Query embeddings used by `/v1/skills/search` and `/v1/skills/suggest` are now cached in the per-colo Cloudflare Cache API (24h TTL, SHA-256 of lowercased/trimmed query as the key, model name in the key so a model swap auto-invalidates). Eliminates the Workers AI hop on repeat searches — warm hits drop search latency from ~500ms to ~100ms. Document embeddings remain uncached (they run at publish/reembed time, not per-request). No API surface change.
+- `added:` `.github/workflows/deploy.yml` — auto-deploys the Worker to dev on every push to main, gates prod behind `workflow_dispatch` with the `production` environment's required-reviewer approval. Requires `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` repo secrets.
+
 ## 2026-04-21 — Admin API hardening + leaderboard bot exclusion
 
 - `security:` `/v1/admin/*` now rate-limited at 60 req/min/ip (`LIMITS.admin`). Caps blast radius of a leaked `ADMIN_TOKEN` and prevents runaway Workers AI usage. Runs BEFORE the bearer check so unauthed probes count against the budget.

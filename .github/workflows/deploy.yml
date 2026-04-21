@@ -1,0 +1,85 @@
+name: deploy
+
+# Deploys the Cloudflare Worker (apps/api) on every push to main. Dev
+# deploys automatically; prod deploys require the `production` env's
+# required-reviewer gate to be satisfied (configure in GitHub → Settings
+# → Environments → production → Required reviewers).
+#
+# Required secrets (set in repo Settings → Secrets):
+#   CLOUDFLARE_API_TOKEN   — Workers deploy permission
+#   CLOUDFLARE_ACCOUNT_ID  — your account id
+#
+# Secrets that the Worker needs at runtime (DATABASE_URL, ADMIN_TOKEN,
+# VOYAGE_API_KEY if used, etc.) are managed via `wrangler secret put`
+# and are NOT touched by this workflow — existing secrets persist
+# across deploys.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which env to deploy"
+        required: true
+        default: "dev"
+        type: choice
+        options: [dev, production]
+
+jobs:
+  deploy-dev:
+    if: github.event_name == 'push' || github.event.inputs.target == 'dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Deploy to dev
+        run: pnpm exec wrangler deploy --env=dev
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-prod:
+    # Prod deploys only on explicit workflow_dispatch → target=production,
+    # with the `production` environment required-reviewer gate in front.
+    # Auto-deploy on main push is intentionally dev-only so that prod
+    # rollouts stay a human decision.
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Deploy to production
+        run: pnpm exec wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
