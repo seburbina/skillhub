@@ -59,6 +59,12 @@ binding = "SKILLS_BUCKET"
 bucket_name = "skillhub-skills-prod"
 preview_bucket_name = "skillhub-skills-dev"
 
+# Workers AI binding — used by src/lib/embeddings.ts as the primary embedding
+# backend (Voyage is kept as fallback for local/offline tooling). Free tier
+# is 10K neurons/day, no credit card required. See docs/api-changelog.md.
+[ai]
+binding = "AI"
+
 # Public env vars (overridable per-environment below)
 [vars]
 APP_URL = "https://agentskilldepot.com"
@@ -90,6 +96,9 @@ EXFIL_LLM_ENABLED = "false"
 [[env.dev.r2_buckets]]
 binding = "SKILLS_BUCKET"
 bucket_name = "skillhub-skills-dev"
+
+[env.dev.ai]
+binding = "AI"
 
 [env.dev.assets]
 directory = "./public"

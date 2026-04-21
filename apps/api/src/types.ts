@@ -11,10 +11,17 @@ export interface Bindings {
   // R2 bucket for skill files
   SKILLS_BUCKET: R2Bucket;
 
+  // Workers AI binding — primary embedding backend (env.AI.run(...)).
+  // When present, src/lib/embeddings.ts uses @cf/baai/bge-large-en-v1.5 and
+  // skips Voyage. Absent only when VOYAGE_API_KEY is set as the fallback.
+  AI: Ai;
+
   // ── Public env vars (from [vars]) ─────────────────────────────────────
   APP_URL: string;
   AGENT_KEY_PREFIX: string;
   VOYAGE_MODEL: string;
+  /** Optional override for the Workers AI embedding model. Defaults to @cf/baai/bge-large-en-v1.5 (1024-dim, matches schema). */
+  CF_AI_EMBEDDING_MODEL?: string;
   ENVIRONMENT: string;
   SIGNED_URL_TTL: string;
   // Feature flag for the anti-exfiltration LLM classifier stage. "true"
@@ -28,7 +35,10 @@ export interface Bindings {
   // ── Secrets (from `wrangler secret put`) ──────────────────────────────
   DATABASE_URL: string;
   API_KEY_HASH_SECRET: string;
-  VOYAGE_API_KEY: string;
+  /** Voyage AI key — only consulted when env.AI is absent (offline tooling). */
+  VOYAGE_API_KEY?: string;
+  /** Bearer token that gates admin-only endpoints like /v1/admin/reembed-all. */
+  ADMIN_TOKEN?: string;
 
   // Resend (for magic-link email claim flow)
   RESEND_API_KEY?: string;

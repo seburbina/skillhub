@@ -17,6 +17,13 @@ additive.
 
 ---
 
+## 2026-04-21 — Cloudflare Workers AI embeddings + admin API
+
+- `changed:` Embedding backend switched from Voyage AI to Cloudflare Workers AI (`@cf/baai/bge-large-en-v1.5`, 1024-dim — schema-compatible). Free tier (10K neurons/day) covers expected volume; no credit card required. Voyage retained as a fallback when `env.AI` is absent (offline tooling).
+- `added:` `[ai]` binding in `wrangler.toml` (top-level + `[env.dev.ai]`). Wrangler types regenerated via `cf-typegen` surface `env.AI`.
+- `added:` `POST /v1/admin/reembed-all` — re-embed skills in batches via `ctx.waitUntil`. Bearer-gated by `ADMIN_TOKEN` (set via `wrangler secret put ADMIN_TOKEN`). Params: `only_missing` (default `true`), `batch_size` (default 25, max 100).
+- `added:` `GET /v1/admin/embed-status` — total / embedded / mirrored-missing counts for monitoring a re-embed pass.
+
 ## 2026-04-20 — skills.sh import pipeline + upstream attribution
 
 - `added:` `skills.upstream_url`, `skills.original_author`, `skills.mirrored_from` columns — populated when a skill was mirrored from an external directory. Non-null on mirrored rows, null on native publishes. **Non-breaking:** existing rows default to null.

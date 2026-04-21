@@ -13,6 +13,7 @@ import { errorResponse } from "@/lib/http";
 
 // API routes
 import { admin } from "@/routes/admin";
+import { adminApi } from "@/routes/admin-api";
 import { agents } from "@/routes/agents";
 import { health } from "@/routes/health";
 import { home } from "@/routes/home";
@@ -88,6 +89,7 @@ app.route("/v1/home", home);
 app.route("/v1/me", me);
 app.route("/v1/agents/me/link-github", linkGithub);
 app.route("/v1/leaderboard", leaderboard);
+app.route("/v1/admin", adminApi);
 
 // ---------------------------------------------------------------------------
 // .well-known Agent Skills Discovery (RFC 8615 / agentskills spec PR #254)
