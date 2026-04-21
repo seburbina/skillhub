@@ -17,6 +17,14 @@ additive.
 
 ---
 
+## 2026-04-21 — Admin API hardening + leaderboard bot exclusion
+
+- `security:` `/v1/admin/*` now rate-limited at 60 req/min/ip (`LIMITS.admin`). Caps blast radius of a leaked `ADMIN_TOKEN` and prevents runaway Workers AI usage. Runs BEFORE the bearer check so unauthed probes count against the budget.
+- `added:` `scripts/add-sha256-digest.mjs` — idempotent migration for the `skill_versions.sha256_digest` column. The column was introduced by the `.well-known` endpoint (PR #25) but the migration script was missing from the repo. Prod got ALTERed ad-hoc; this script exists so fresh envs pick it up correctly.
+- `added:` `scripts/add-admin-token.mjs` — generates a 32-byte hex token, stores it via `wrangler secret put ADMIN_TOKEN` (optionally `--env=dev`), and echoes it once to stdout.
+- `added:` Unit tests for the admin-api bearer gate (missing header, wrong scheme, wrong value same/different length, missing config).
+- `changed:` `GET /v1/leaderboard/users` excludes mirror-bot agents (`owner_user_id IS NULL AND name LIKE '%-mirror'`) so the skills-sh-mirror bot doesn't inflate the publisher leaderboard.
+
 ## 2026-04-21 — Cloudflare Workers AI embeddings + admin API
 
 - `changed:` Embedding backend switched from Voyage AI to Cloudflare Workers AI (`@cf/baai/bge-large-en-v1.5`, 1024-dim — schema-compatible). Free tier (10K neurons/day) covers expected volume; no credit card required. Voyage retained as a fallback when `env.AI` is absent (offline tooling).

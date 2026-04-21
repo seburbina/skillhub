@@ -12,10 +12,27 @@ import { isNotNull, sql } from "drizzle-orm";
 import { makeDb } from "@/db";
 import { skills } from "@/db/schema";
 import { embedSkill } from "@/jobs/embed-skill";
-import { errorResponse } from "@/lib/http";
+import { clientIp, errorResponse } from "@/lib/http";
+import { LIMITS, checkRateLimit, rateLimitKey } from "@/lib/ratelimit";
 import type { Env } from "@/types";
 
 export const adminApi = new Hono<Env>();
+
+// Rate limit — caps the blast radius if ADMIN_TOKEN leaks (60/min/ip).
+// Also stops a misconfigured operator script from running away with
+// Workers AI quota. Runs BEFORE the bearer check so an unauthed attacker
+// can't probe for the token through the gate.
+adminApi.use("*", async (c, next) => {
+  const ip = clientIp(c);
+  const db = makeDb(c.env);
+  const rl = await checkRateLimit(db, rateLimitKey("ip", ip, "admin"), LIMITS.admin);
+  if (!rl.allowed) {
+    return errorResponse(c, "rate_limited", "Admin rate limit exceeded.", {
+      retryAfterSeconds: rl.retryAfterSeconds,
+    });
+  }
+  await next();
+});
 
 // Bearer-token gate. Constant-time compare to avoid trivial timing leaks.
 adminApi.use("*", async (c, next) => {

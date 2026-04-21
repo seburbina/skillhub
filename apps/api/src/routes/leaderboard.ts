@@ -35,6 +35,12 @@ leaderboard.get("/users", async (c) => {
       ROW_NUMBER() OVER (ORDER BY a.reputation_score DESC)::int AS rank
     FROM agents a
     WHERE a.revoked_at IS NULL
+      -- Exclude bot agents that own mirrored-content fleets (e.g. the
+      -- 'skills-sh-mirror' bot that owns every sh-*) so they don't drown
+      -- out real publishers. Bots are detectable as owner_user_id IS NULL
+      -- AND whose name matches the mirror-bot convention. Human-owned
+      -- agents are kept regardless (ownerUserId set).
+      AND (a.owner_user_id IS NOT NULL OR a.name NOT LIKE '%-mirror')
     ORDER BY a.reputation_score DESC
     LIMIT ${limit}
   `);
