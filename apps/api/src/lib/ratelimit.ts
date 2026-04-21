@@ -67,6 +67,10 @@ export const LIMITS = {
   search:    { windowSeconds: 3600,  max: 600 },
   download:  { windowSeconds: 86400, max: 200 },
   telemetry: { windowSeconds: 3600,  max: 1000 },
+  /** /v1/admin/* is bearer-gated by ADMIN_TOKEN; this bucket caps damage
+   *  if the token leaks. 60/min is plenty for legit ops (batch re-embed,
+   *  yank workflows, status polling). */
+  admin:     { windowSeconds: 60,    max: 60 },
 } as const satisfies Record<string, RateLimitConfig>;
 
 // ---------------------------------------------------------------------------
