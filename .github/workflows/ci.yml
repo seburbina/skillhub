@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         # Version comes from package.json `packageManager` field.
         # Passing `version:` here conflicts with that since pnpm/action-setup@v4.
 
