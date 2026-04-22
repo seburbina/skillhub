@@ -19,6 +19,6 @@
     "base-skill:package": "python3 base-skill/skillhub/scripts/package.py base-skill/skillhub dist/skillhub.skill"
   },
   "devDependencies": {
-    "prettier": "^3.2.5"
+    "prettier": "^3.8.2"
   }
 }
