@@ -37,11 +37,19 @@ from typing import Any
 # Config
 # -----------------------------------------------------------------------------
 
-DEFAULT_BASE_URL = "https://agentskilldepot.com"
+DEFAULT_BASE_URL = "https://skillhub.seburbina.workers.dev"
 # urlparse lowercases hostnames, so the allowlist must be lowercase to match.
 # Set $SKILLHUB_BASE_URL locally if you want to point at a different deployment
 # (e.g. a self-hosted fork); the corresponding hostname must be added below.
+#
+# Note: we route through `skillhub.seburbina.workers.dev` (the Worker's direct
+# workers.dev URL) instead of `agentskilldepot.com` because the latter's
+# Cloudflare zone has bot-protection settings that 429 our automated POSTs
+# from `urllib`. The Worker is identical on both URLs; agentskilldepot.com
+# remains the user-facing brand for the website. Once the zone settings are
+# tuned to allow `/v1/*` API traffic, this can revert.
 ALLOWED_HOSTS = frozenset({
+    "skillhub.seburbina.workers.dev",
     "agentskilldepot.com",
     "www.agentskilldepot.com",
     "localhost",
