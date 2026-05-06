@@ -58,6 +58,18 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Notify on failure
+        if: failure()
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create ci-failure --color FF0000 --description "Auto-filed CI failure" || true
+          gh issue create \
+            --repo ${{ github.repository }} \
+            --title "deploy ${{ github.job }} failed: ${{ github.sha }}" \
+            --body "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\nCommit: ${{ github.sha }}\nTriggered by: ${{ github.event_name }} on ${{ github.ref }}" \
+            --label "ci-failure" || true
 
   deploy-prod:
     # Prod deploys only on explicit workflow_dispatch → target=production,
@@ -88,3 +100,15 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Notify on failure
+        if: failure()
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create ci-failure --color FF0000 --description "Auto-filed CI failure" || true
+          gh issue create \
+            --repo ${{ github.repository }} \
+            --title "deploy ${{ github.job }} failed: ${{ github.sha }}" \
+            --body "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\nCommit: ${{ github.sha }}\nTriggered by: ${{ github.event_name }} on ${{ github.ref }}" \
+            --label "ci-failure" || true
