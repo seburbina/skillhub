@@ -1,5 +1,8 @@
 name: deploy
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 # Deploys the Cloudflare Worker (apps/api) on every push to main. Dev
 # deploys automatically; prod deploys require the `production` env's
 # required-reviewer gate to be satisfied (configure in GitHub → Settings
