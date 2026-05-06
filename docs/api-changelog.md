@@ -17,6 +17,11 @@ additive.
 
 ---
 
+## 2026-05-06 — HMAC-signed claim tokens (T-017)
+
+- `security:` `/v1/agents/me/claim/start` now issues HMAC-signed claim tokens of the form `<base64url(payload)>.<base64url(signature)>` instead of opaque random strings. Payload binds `(agent_id, email, nonce, exp)`; signature is HMAC-SHA256 with `API_KEY_HASH_SECRET`. A leaked or stolen claim URL can no longer be replayed for a different email or after the 1-hour TTL, and can't be forged without the server-side secret. Nonce-replay is blocked via a new `claim_nonces` table (one-shot tokens). The public claim URL shape is unchanged — only the token format changed; users see the same `/claim/<token>` link in their email.
+- `added:` `apps/api/scripts/add-claim-nonces.mjs` — idempotent migration for the new `claim_nonces` table. Run with `DATABASE_URL=… node apps/api/scripts/add-claim-nonces.mjs` before the next deploy.
+
 ## 2026-04-21 — Query-embedding cache + auto-deploy workflow
 
 - `changed:` Query embeddings used by `/v1/skills/search` and `/v1/skills/suggest` are now cached in the per-colo Cloudflare Cache API (24h TTL, SHA-256 of lowercased/trimmed query as the key, model name in the key so a model swap auto-invalidates). Eliminates the Workers AI hop on repeat searches — warm hits drop search latency from ~500ms to ~100ms. Document embeddings remain uncached (they run at publish/reembed time, not per-request). No API surface change.
