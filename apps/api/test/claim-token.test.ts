@@ -67,11 +67,18 @@ describe("signClaimToken / verifyClaimToken", () => {
     const now = Math.floor(Date.now() / 1000);
     const token = await signClaimToken(makePayload(), SECRET);
     const [payloadB64, sigB64] = token.split(".");
+    // Alter the FIRST char of the signature, not the last. The last
+    // char of a 32-byte HMAC's base64url encoding only carries 4 bits
+    // of real data — its lower 2 bits are padding zeros that lenient
+    // decoders ignore, so swapping `A`<->`B` at the tail can yield the
+    // same decoded bytes and make the test pass-when-it-shouldn't.
+    // Altering the first char always changes high-order bits and is
+    // unambiguously a different signature.
     const altered =
       payloadB64 +
       "." +
-      sigB64.slice(0, -1) +
-      (sigB64.endsWith("A") ? "B" : "A");
+      (sigB64[0] === "A" ? "B" : "A") +
+      sigB64.slice(1);
     const got = await verifyClaimToken(altered, SECRET, now);
     expect(got).toBeNull();
   });
