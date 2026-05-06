@@ -43,9 +43,9 @@ custom_domain = true
 # Native Cron Triggers (no Inngest needed for the MVP)
 [triggers]
 crons = [
-  "13 * * * *",  # recompute-rankings, hourly at :13
-  "37 * * * *",  # refresh-user-stats matview, hourly at :37
-  "7 * * * *",   # mirror-to-github, hourly at :07
+  "13 * * * *",   # recompute-rankings, hourly at :13
+  "37 * * * *",   # refresh-user-stats matview, hourly at :37
+  "*/5 * * * *",  # mirror-to-github, every 5 min
 ]
 
 # Static assets (CSS, favicon, etc.) served directly from /public

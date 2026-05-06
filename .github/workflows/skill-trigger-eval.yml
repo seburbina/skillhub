@@ -1,0 +1,40 @@
+name: skill-trigger-eval
+
+# Catches the regression mode where a SKILL.md description rewrite
+# silently breaks intent matching. Runs weekly so a slow drift in
+# Claude's classifier behavior is also surfaced — and on-demand via
+# workflow_dispatch when you want to gate a specific PR before merge.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"  # Monday 09:00 UTC
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install (workspace root)
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Run eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: pnpm exec vitest run test/skill_trigger.eval.ts --reporter=verbose
