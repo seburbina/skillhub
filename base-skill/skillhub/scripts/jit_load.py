@@ -28,6 +28,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 try:
     from identity import load_identity, _validate_base_url, DEFAULT_BASE_URL
@@ -37,12 +38,38 @@ except ImportError:
 
 INSTALLED_ROOT = Path.home() / ".claude" / "skills" / "skillhub-installed"
 INSTALLED_INDEX = Path.home() / ".claude" / "skills" / "skillhub" / ".installed.json"
-VERSION = "0.0.1"
+VERSION = "0.0.2"
 
 # Limit on files we inline into the conversation to avoid blowing the context
 MAX_INLINE_FILES = 8
 MAX_INLINE_BYTES = 120 * 1024  # 120 KiB total across all inlined files
 PRINT_SEPARATOR = "\n" + ("─" * 72) + "\n"
+
+
+class _StripAuthOnCrossOriginRedirect(urllib.request.HTTPRedirectHandler):
+    """Drop the Authorization header when redirecting to a different host.
+
+    The download endpoint returns 302 to a presigned R2 URL; carrying our
+    `Authorization: Bearer skh_live_...` across that redirect causes R2 to
+    reject the request with `Missing x-amz-content-sha256` because the
+    bearer header is interpreted as an AWS-SigV4 attempt instead of using
+    the query-string signature.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is None:
+            return None
+        old_host = urlparse(req.full_url).hostname or ""
+        new_host = urlparse(new_req.full_url).hostname or ""
+        if old_host != new_host:
+            for header in ("Authorization", "authorization"):
+                new_req.headers.pop(header, None)
+                new_req.unredirected_hdrs.pop(header, None)
+        return new_req
+
+
+_OPENER = urllib.request.build_opener(_StripAuthOnCrossOriginRedirect())
 
 
 def _get(base_url: str, path: str, api_key: str, follow_redirects: bool = True) -> bytes:
@@ -55,7 +82,7 @@ def _get(base_url: str, path: str, api_key: str, follow_redirects: bool = True) 
             "User-Agent": f"skillhub-base-skill/{VERSION}",
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with _OPENER.open(req, timeout=30) as resp:
         return resp.read()
 
 
