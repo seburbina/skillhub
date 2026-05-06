@@ -2,7 +2,12 @@ import { Hono } from "hono";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { makeDb } from "@/db";
-import { agents as agentsTable, skills, skillVersions } from "@/db/schema";
+import {
+  agents as agentsTable,
+  claimNonces,
+  skills,
+  skillVersions,
+} from "@/db/schema";
 import { computeBadges } from "@/lib/achievements";
 import {
   agentFromKey,
@@ -13,7 +18,9 @@ import {
 import { generateChallenge, isNewUnverifiedAgent } from "@/lib/challenge";
 import {
   CLAIM_TOKEN_TTL_MINUTES,
-  generateClaimToken,
+  defaultExpiry,
+  generateNonce,
+  signClaimToken,
 } from "@/lib/claim-token";
 import {
   claimEmailHtml,
@@ -467,11 +474,23 @@ agents.post("/me/claim/start", async (c) => {
   }
   const email = parsed.data.email.toLowerCase().trim();
 
-  // Generate the stateless magic-link token
-  const token = await generateClaimToken(
-    { agent_id: agent.id, email },
-    c.env,
+  // Generate an HMAC-signed magic-link token. The nonce is also stored
+  // server-side so the verifier can reject replay (one-shot tokens).
+  const db = makeDb(c.env);
+  const nonce = generateNonce();
+  const exp = defaultExpiry();
+  const token = await signClaimToken(
+    { agent_id: agent.id, email, nonce, exp },
+    c.env.API_KEY_HASH_SECRET,
   );
+
+  await db.insert(claimNonces).values({
+    nonce,
+    agentId: agent.id,
+    email,
+    expiresAt: new Date(exp * 1000),
+  });
+
   const claimUrl = `${c.env.APP_URL}/claim/${encodeURIComponent(token)}`;
 
   // Send via Resend. If this fails, surface the error to the agent so the

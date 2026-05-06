@@ -1,18 +1,22 @@
 /** @jsxImportSource hono/jsx */
 import type { Context } from "hono";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { Layout } from "./_layout";
 import { makeDb } from "@/db";
-import { agents, users } from "@/db/schema";
+import { agents, claimNonces, users } from "@/db/schema";
 import { verifyClaimToken } from "@/lib/claim-token";
 import type { Env } from "@/types";
 
 /**
  * GET /claim/:token  — completes the magic-link claim flow.
  *
- * Verifies the stateless token, looks up (or creates) the user by email,
- * sets agents.owner_user_id, and renders a confirmation page. Idempotent
- * on second click — first wins.
+ * Verifies the HMAC-signed token, ensures the nonce has not already
+ * been used (one-shot defense), looks up (or creates) the user by
+ * email, and sets agents.owner_user_id. Idempotent on second click
+ * for THIS email — but a fresh request to /me/claim/start always
+ * produces a fresh nonce, so a leaked link can be invalidated by
+ * issuing a new one (the new one will succeed; the old one is then
+ * just an expired/used row).
  */
 export async function renderClaimPage(c: Context<Env>) {
   const tokenRaw = c.req.param("token");
@@ -20,18 +24,82 @@ export async function renderClaimPage(c: Context<Env>) {
 
   const token = decodeURIComponent(tokenRaw);
 
-  const verified = await verifyClaimToken(token, c.env);
-  if (!verified.ok) {
-    const reasonCopy: Record<string, string> = {
-      malformed: "The claim link is malformed.",
-      expired: "This claim link has expired. Ask the agent to send a new one.",
-      bad_signature: "This claim link is invalid or has been tampered with.",
-    };
-    return error(c, "Claim failed", reasonCopy[verified.reason] ?? "Unknown error.");
+  const verified = await verifyClaimToken(
+    token,
+    c.env.API_KEY_HASH_SECRET,
+    Math.floor(Date.now() / 1000),
+  );
+  if (!verified) {
+    return error(
+      c,
+      "Claim failed",
+      "This claim link is invalid or has expired. Ask the agent to send a new one.",
+    );
   }
 
-  const { agent_id, email } = verified;
+  const { agent_id, email, nonce } = verified;
   const db = makeDb(c.env);
+
+  // Atomically mark the nonce used. If 0 rows were updated, either the
+  // nonce was never issued (forged signature would have been rejected
+  // above, but a stale-DB nonce can hit this) or it was already used.
+  const claim = await db
+    .update(claimNonces)
+    .set({ usedAt: new Date() })
+    .where(
+      and(
+        eq(claimNonces.nonce, nonce),
+        eq(claimNonces.agentId, agent_id),
+        eq(claimNonces.email, email),
+        isNull(claimNonces.usedAt),
+      ),
+    )
+    .returning({ nonce: claimNonces.nonce });
+
+  if (claim.length === 0) {
+    // Nonce already used (or never registered). Read the row to decide
+    // between "already used" and "unknown" UX. If the same user double-
+    // clicked their fresh link, we want to render the success page
+    // rather than a scary error — so when the agent is already linked
+    // to THIS email, fall through to the idempotent success path below.
+    const exists = await db
+      .select({ usedAt: claimNonces.usedAt })
+      .from(claimNonces)
+      .where(eq(claimNonces.nonce, nonce))
+      .limit(1);
+
+    if (!exists[0]?.usedAt) {
+      return error(
+        c,
+        "Claim failed",
+        "This claim link is invalid or has expired. Ask the agent to send a new one.",
+      );
+    }
+
+    // Used. Check if the agent is already owned by this email — if so,
+    // it's the same user double-clicking their own working link.
+    const ownerRow = await db
+      .select({
+        agentName: agents.name,
+        ownerEmail: users.email,
+      })
+      .from(agents)
+      .leftJoin(users, eq(agents.ownerUserId, users.id))
+      .where(eq(agents.id, agent_id))
+      .limit(1);
+    if (
+      ownerRow[0]?.ownerEmail &&
+      ownerRow[0].ownerEmail.toLowerCase() === email.toLowerCase()
+    ) {
+      return success(c, ownerRow[0].agentName, agent_id, email, true);
+    }
+
+    return error(
+      c,
+      "Claim link already used",
+      "This claim link has already been used. If you didn't expect this, ask the agent to send a fresh one.",
+    );
+  }
 
   // Look up the agent
   const agentRows = await db

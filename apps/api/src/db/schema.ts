@@ -482,6 +482,42 @@ export const rateLimitBuckets = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Claim-flow replay protection (T-017)
+// ---------------------------------------------------------------------------
+
+/**
+ * One-shot nonces for the email-claim magic-link flow.
+ *
+ * On `POST /v1/agents/me/claim/start` we sign a token over
+ * `(agent_id, email, nonce, exp)` and insert the nonce here. On
+ * `GET /claim/:token` we verify the signature, then atomically
+ * mark the nonce used — second click is a no-op error.
+ *
+ * Cleanup: rows older than `expires_at` can be pruned by a cron;
+ * absence of a row also looks like reuse, so dropping expired rows
+ * is safe (the signature still rejects expired tokens via `exp`).
+ */
+export const claimNonces = pgTable(
+  "claim_nonces",
+  {
+    nonce: text("nonce").primaryKey(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    agentIdx: index("claim_nonces_agent_idx").on(t.agentId),
+    expiresAtIdx: index("claim_nonces_expires_at_idx").on(t.expiresAt),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Audit log (Phase 0 §0.2) — append-only via RLS
 // ---------------------------------------------------------------------------
 
