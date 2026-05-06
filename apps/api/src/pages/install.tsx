@@ -12,7 +12,7 @@ import type { Env } from "@/types";
  * step" CTA so users don't land on a dead end.
  */
 export function renderInstallPage(c: Context<Env>) {
-  const downloadCmd = `curl -L https://github.com/seburbina/skillhub/releases/latest/download/skillhub.skill \\
+  const downloadCmd = `curl -fL https://github.com/seburbina/skillhub/releases/latest/download/skillhub.skill \\
   -o skillhub.skill`;
   const unzipCmd = `mkdir -p ~/.claude/skills && unzip skillhub.skill -d ~/.claude/skills/`;
 
@@ -153,7 +153,7 @@ export function renderInstallPage(c: Context<Env>) {
 
             <h3>Install (detailed)</h3>
             <pre>{`# 1. Download the latest release
-curl -L https://github.com/seburbina/skillhub/releases/latest/download/skillhub.skill \\
+curl -fL https://github.com/seburbina/skillhub/releases/latest/download/skillhub.skill \\
   -o skillhub.skill
 
 # 2. Unzip into your skills directory (Claude Code example — see docs for other agents)
