@@ -158,7 +158,7 @@ export default {
           .then(() => console.log("[refreshUserStats] done"))
           .catch((e) => console.error("[refreshUserStats] failed", e)),
       );
-    } else if (cron === "7 * * * *") {
+    } else if (cron === "*/5 * * * *") {
       ctx.waitUntil(
         mirrorToGithub(env)
           .then((r) => console.log("[mirrorToGithub] done", r))
