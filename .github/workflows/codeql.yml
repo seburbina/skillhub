@@ -1,5 +1,8 @@
 name: CodeQL
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 # Phase 0 §0.11 — static analysis for security issues.
 # Free for public repos. Runs weekly + on every PR to main.
 

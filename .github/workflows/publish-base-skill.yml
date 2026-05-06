@@ -1,5 +1,8 @@
 name: Publish base-skill release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 # Builds the skillhub base skill as a .skill archive on every tagged
 # release, and attaches it as a release asset. Users install from here.
 
