@@ -61,6 +61,9 @@ TASK_VERBS = {
     "crop", "resize", "compress", "decompress", "edit", "trim", "reformat",
     "scrub", "clean", "normalize", "normalise", "lemmatize", "tokenize",
     "embed", "index", "search",
+    # Common-task verbs that surfaced as false negatives in tests/test_intent_detect.py
+    "make", "write", "remove", "find", "add", "replace", "update",
+    "change", "improve", "rewrite", "fix",
 }
 
 FORMAT_NOUNS = {
@@ -81,6 +84,7 @@ DOMAIN_NOUNS = {
     "stacktrace", "screenshot", "video", "audio", "transcript", "image",
     "images", "photo", "photos", "timeseries", "timeline", "notebook",
     "jupyter", "slide", "slides", "presentation",
+    "document", "spreadsheet",
 }
 
 # Stopwords / framing words we strip when normalizing for topic_hash
@@ -102,17 +106,38 @@ NEGATIVE_QA_PATTERNS = [
     re.compile(r"\btell\s+me\s+about\b", re.I),
     re.compile(r"\bhelp\s+me\s+understand\b", re.I),
     re.compile(r"\bwhat(?:'s|\s+is)\s+the\s+(?:difference|meaning)\b", re.I),
+    # Soft-question forms that surfaced as false positives in tests/test_intent_detect.py
+    re.compile(r"\bhow\s+would\s+(?:i|you|we)\b", re.I),
+    re.compile(r"\bis\s+there\s+(?:a\s+)?way\s+to\b", re.I),
+    re.compile(r"\bis\s+it\s+possible\s+to\b", re.I),
+    re.compile(r"\bshould\s+(?:i|you|we)\b", re.I),
+    re.compile(r"\bcan\s+(?:i|you|we)\b", re.I),
+    re.compile(r"\bdo\s+you\s+know\b", re.I),
 ]
 
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
+
+# Pre-computed union for lemmatization lookup (cheap, single-shot at import).
+_LEMMA_TARGETS = TASK_VERBS | FORMAT_NOUNS | DOMAIN_NOUNS
 
 
 # -----------------------------------------------------------------------------
 # Detection
 # -----------------------------------------------------------------------------
 
+def _lemmatize(token: str) -> str:
+    """Crude singular-ization: if the trailing-s form misses but the bare
+    form is in our lexicon, return the bare form. Lets `csvs`, `tests`,
+    `documents`, `dedupes` match `csv`, `test`, `document`, `dedupe`."""
+    if token in _LEMMA_TARGETS:
+        return token
+    if token.endswith("s") and len(token) > 1 and token[:-1] in _LEMMA_TARGETS:
+        return token[:-1]
+    return token
+
+
 def _tokenize(text: str) -> list[str]:
-    return [w.lower() for w in _WORD_RE.findall(text)]
+    return [_lemmatize(w.lower()) for w in _WORD_RE.findall(text)]
 
 
 def _detect(text: str) -> dict:
