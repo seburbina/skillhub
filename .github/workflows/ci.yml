@@ -93,12 +93,10 @@ jobs:
           assert r['overall_severity'] != 'block', r
           "
 
-      - name: intent_detect.py sanity checks (positive + negative cases)
+      - name: intent_detect.py regression suite (35 cases)
         run: |
-          python3 base-skill/skillhub/scripts/intent_detect.py "extract tables from this pdf" > /tmp/detect_pos.json
-          python3 -c "import json; r=json.load(open('/tmp/detect_pos.json')); assert r['is_task'] is True, r"
-          python3 base-skill/skillhub/scripts/intent_detect.py "what is the meaning of life" > /tmp/detect_neg.json
-          python3 -c "import json; r=json.load(open('/tmp/detect_neg.json')); assert r['is_task'] is False, r"
+          cd base-skill/skillhub
+          python3 -m unittest tests.test_intent_detect -v
 
       - name: identity.py status (unregistered)
         run: |

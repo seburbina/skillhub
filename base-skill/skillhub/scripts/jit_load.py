@@ -38,7 +38,7 @@ except ImportError:
 
 INSTALLED_ROOT = Path.home() / ".claude" / "skills" / "skillhub-installed"
 INSTALLED_INDEX = Path.home() / ".claude" / "skills" / "skillhub" / ".installed.json"
-VERSION = "0.0.4"
+VERSION = "0.0.5"
 
 # Limit on files we inline into the conversation to avoid blowing the context
 MAX_INLINE_FILES = 8
