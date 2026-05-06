@@ -103,7 +103,7 @@ def _resolve_and_download(base_url: str, api_key: str, slug: str, version: str |
         )
 
     # Download the .skill
-    path = f"/v1/skills/by-slug/{slug}/versions/{version}/download"
+    path = f"/v1/skills/{slug}/versions/{version}/download"
     content = _get(base_url, path, api_key)
 
     # Verify content hash BEFORE writing to disk — refuse to materialize a
