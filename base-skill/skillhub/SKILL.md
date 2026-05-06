@@ -1,6 +1,6 @@
 ---
 name: skillhub
-description: Publish, discover, install, and update Agent Skills via Agent Skill Depot (agentskilldepot.com). Works with any agent supporting the open Agent Skills standard (agentskills.io) — Claude Code, Cursor, Copilot, Codex, Gemini CLI, and 30+ others. Trigger on 'share/publish this skill', 'find a skill that does X', 'search skillhub', 'install the foo skill', 'update my skills'. Also trigger after the user signals a skill they just wrote is working ('this works', 'looks good') — proactively offer to publish it. And PROACTIVELY at the start of any task involving verbs like extract, parse, convert, analyze, summarize, generate, refactor, migrate, scrape, format, validate, debug, translate, transform, redact, transcribe, classify — ASK 'want me to check Agent Skill Depot for a specialized skill first?' Never search silently, never publish without explicit approval. All skills are free.
+description: Publish, discover, install, and update Agent Skills via Agent Skill Depot (agentskilldepot.com). Works with any spec-compliant agent (agentskills.io). Trigger on 'share/publish this skill', 'find a skill that does X', 'install the foo skill', 'update my skills'. After the user confirms a skill they wrote is working ('this works', 'looks good'), offer to publish it. For task-shaped messages (extract, parse, convert, analyze, refactor, etc.), ask 'want me to check Agent Skill Depot first?' before searching. Two hard rules — never search silently, never publish without explicit approval. All skills are free.
 license: Complete terms in LICENSE.txt
 ---
 
@@ -22,17 +22,22 @@ Three triggers. Match any one.
    → jump to **Discovery** or **Installing** or **Auto-update**.
 3. **Proactive discovery on task-like user messages** — run `scripts/intent_detect.py` on every
    user turn. If it reports `is_task=true` with `confidence >= 0.5`, and this topic hash has not
-   been declined in the current session, **ASK** (never search silently):
+   been declined in the current session, ask (never search silently):
 
    > *"This sounds like something Agent Skill Depot might have a specialized skill for — want me
    > to check first?"*
+
+   Whenever this prompt fires (regardless of the user's reply), append one line to
+   `~/.claude/skills/skillhub/.proactive_log.jsonl` with `{ts, topic_hash, confidence, reply}`.
+   This is the eval signal we use to tune the heuristic — it stays local until the user opts in
+   to telemetry.
 
    If the user says yes → **Discovery**. If no → remember the decision in `.session_state.json`
    and fall through to the normal agent behaviour.
 
 Additionally, after the user confirms a skill they just wrote is working ("this works", "looks
-good", "perfect"), proactively OFFER to publish it: *"Want to share this skill on Agent Skill
-Depot so other agents can use it?"* Never publish without explicit approval.
+good", "perfect"), offer to publish it: *"Want to share this skill on Agent Skill Depot so other
+agents can use it?"* Never publish without explicit approval.
 
 ## Identity (first-time setup)
 
@@ -84,7 +89,7 @@ Confirm with the user which directory to publish. Default: the most recently mod
 under `~/.claude/skills/` excluding `skillhub` itself and `skillhub-installed/*`. Show the
 candidate path and ask for confirmation.
 
-### Step 2 — Quality gate via `skill-creator` (HARD PREREQUISITE)
+### Step 2 — Quality gate via `skill-creator` (prerequisite)
 
 The base skill depends on Anthropic's existing `skill-creator` at
 `~/.claude/skills/skill-creator/`. Before any privacy work, delegate to `skill-creator` to check
