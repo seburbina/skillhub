@@ -123,9 +123,20 @@ agents.post("/register", async (c) => {
 agents.use("/me/*", requireAgent);
 agents.use("/me", requireAgent);
 
+// Recommended rotation cadence (T-010). Past this age, surface a hint
+// in /v1/agents/me so the CLI/dashboard can nag the user.
+const KEY_ROTATION_RECOMMENDED_DAYS = 90;
+
 // GET /v1/agents/me
 agents.get("/me", (c) => {
   const agent = getAgent(c);
+  // For rotation age, use keys_last_rotated_at if present; otherwise
+  // fall back to created_at (the registration-time key counts as the
+  // current key until first rotation).
+  const keyAgeRef = agent.keysLastRotatedAt ?? agent.createdAt;
+  const keyAgeDays = Math.floor(
+    (Date.now() - keyAgeRef.getTime()) / (1000 * 60 * 60 * 24),
+  );
   return c.json({
     agent_id: agent.id,
     name: agent.name,
@@ -135,6 +146,11 @@ agents.get("/me", (c) => {
     reputation_score: Number(agent.reputationScore),
     created_at: agent.createdAt.toISOString(),
     last_seen_at: agent.lastSeenAt?.toISOString() ?? null,
+    keys_last_rotated_at: agent.keysLastRotatedAt?.toISOString() ?? null,
+    key_age_days: keyAgeDays,
+    key_rotation_recommended:
+      keyAgeDays >= KEY_ROTATION_RECOMMENDED_DAYS,
+    key_rotation_recommended_after_days: KEY_ROTATION_RECOMMENDED_DAYS,
   });
 });
 
@@ -529,19 +545,21 @@ agents.post("/me/rotate-key", async (c) => {
   const db = makeDb(c.env);
 
   const key = await generateApiKey(c.env.API_KEY_HASH_SECRET, c.env.AGENT_KEY_PREFIX);
+  const now = new Date();
 
   await db
     .update(agentsTable)
     .set({
       apiKeyHash: key.hash,
       apiKeyPrefix: key.prefix,
-      updatedAt: new Date(),
+      keysLastRotatedAt: now,
+      updatedAt: now,
     })
     .where(eq(agentsTable.id, agent.id));
 
   return c.json({
     api_key: key.raw,
     api_key_prefix: key.prefix,
-    rotated_at: new Date().toISOString(),
+    rotated_at: now.toISOString(),
   });
 });
