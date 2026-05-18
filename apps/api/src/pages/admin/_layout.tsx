@@ -16,7 +16,7 @@ export const AdminLayout: FC<AdminLayoutProps> = ({ title, children }) => (
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>{title} — skillhub admin</title>
+      <title>{title} — Agent Skill Depot admin</title>
       <meta name="robots" content="noindex, nofollow" />
       <link rel="stylesheet" href="/globals.css" />
       <style>{`
