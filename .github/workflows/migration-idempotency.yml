@@ -1,0 +1,186 @@
+name: migration-idempotency
+
+# Why this exists (T-020): apps/api/scripts/add-*.mjs migrations are
+# meant to be safe to re-run. A missing `IF NOT EXISTS` or a
+# CREATE-without-DO-block POLICY would only break on the second run —
+# and re-runs are rare in production, so a regression could sit
+# undetected for months. This workflow spins up an ephemeral Postgres,
+# runs every add-*.mjs once, snapshots the schema, runs them again,
+# snapshots again, and fails CI if the schemas differ.
+#
+# Scope: idempotency of add-*.mjs only. NOT a full bootstrap test —
+# the production migrate.mjs depends on Drizzle-generated SQL that is
+# gitignored, so we use a hand-rolled minimal base-schema bootstrap
+# (see apps/api/scripts/ci/bootstrap-base-schema.sql) that creates
+# just enough parent tables for the ALTERs/REFERENCES to resolve.
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/scripts/add-*.mjs"
+      - "apps/api/scripts/ci/**"
+      - "apps/api/src/db/schema.ts"
+      - ".github/workflows/migration-idempotency.yml"
+  workflow_dispatch:
+
+env:
+  # Match the rest of the repo's workflows: pin all JS actions to Node 24
+  # to avoid the deprecation warning for actions still on Node 20.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  idempotency:
+    name: Run every add-*.mjs twice and diff pg_dump
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # pgvector/pgvector:pg16 = Postgres 16 with pgvector preinstalled.
+        # Postgres-contrib (citext, pgcrypto) is bundled with the official
+        # postgres base image this is derived from.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: skilltest
+          POSTGRES_PASSWORD: skilltest
+          POSTGRES_DB: skilltest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U skilltest -d skilltest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://skilltest:skilltest@localhost:5432/skilltest
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: skilltest
+      PGPASSWORD: skilltest
+      PGDATABASE: skilltest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install workspace deps (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install pg client tools + the pg Node package (transient)
+        # pg_dump comes from postgresql-client (apt). The `pg` Node
+        # package is installed to /tmp/pgmod so we don't have to modify
+        # apps/api/package.json or the workspace lockfile — NODE_PATH
+        # below picks it up for the migration runs.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+          mkdir -p /tmp/pgmod
+          (cd /tmp/pgmod && npm init -y >/dev/null && npm install --no-save pg@8.13.1 >/dev/null)
+          echo "NODE_PATH=/tmp/pgmod/node_modules" >> "$GITHUB_ENV"
+
+      - name: Wait for Postgres to be reachable
+        # The service container healthcheck makes GitHub wait before the
+        # job starts, but psql connectivity from the runner can still race.
+        run: |
+          for i in {1..20}; do
+            if pg_isready -h localhost -p 5432 -U skilltest >/dev/null 2>&1; then
+              echo "postgres ready"
+              exit 0
+            fi
+            echo "waiting for postgres ($i/20)..."
+            sleep 1
+          done
+          echo "postgres never became ready" >&2
+          exit 1
+
+      - name: Bootstrap base schema + extensions
+        # Loads the minimal parent tables (users, agents, skills, ...)
+        # that the add-*.mjs migrations ALTER and FK-reference. Without
+        # this, every migration would fail on the first ALTER TABLE.
+        run: |
+          psql -v ON_ERROR_STOP=1 \
+            -f apps/api/scripts/ci/bootstrap-base-schema.sql
+
+      - name: First pass — run every add-*.mjs
+        working-directory: apps/api
+        run: |
+          set -euo pipefail
+          # add-admin-token.mjs is NOT a DB migration — it calls
+          # `wrangler secret put` and does not touch Postgres. Skip it.
+          for f in scripts/add-*.mjs; do
+            base="$(basename "$f")"
+            if [ "$base" = "add-admin-token.mjs" ]; then
+              echo "::group::skip $base (not a DB migration)"
+              echo "::endgroup::"
+              continue
+            fi
+            echo "::group::pass 1 — $base"
+            node --import ./scripts/ci/register-neon-shim.mjs "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Snapshot schema after pass 1
+        # pg_dump 16.14+ writes nondeterministic \restrict/\unrestrict
+        # tokens at the top and bottom of every dump (a security feature
+        # so the file can't be replayed by a different session). Strip
+        # them so the diff is reproducible across runs.
+        run: |
+          pg_dump --schema-only --no-owner --no-privileges \
+            -h localhost -U skilltest skilltest \
+            | grep -vE '^\\(restrict|unrestrict)\b' \
+            > /tmp/schema-after-pass-1.sql
+          echo "schema-after-pass-1.sql: $(wc -l < /tmp/schema-after-pass-1.sql) lines"
+
+      - name: Second pass — every add-*.mjs again (must be idempotent)
+        working-directory: apps/api
+        run: |
+          set -euo pipefail
+          for f in scripts/add-*.mjs; do
+            base="$(basename "$f")"
+            if [ "$base" = "add-admin-token.mjs" ]; then
+              continue
+            fi
+            echo "::group::pass 2 — $base"
+            node --import ./scripts/ci/register-neon-shim.mjs "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Snapshot schema after pass 2
+        run: |
+          pg_dump --schema-only --no-owner --no-privileges \
+            -h localhost -U skilltest skilltest \
+            | grep -vE '^\\(restrict|unrestrict)\b' \
+            > /tmp/schema-after-pass-2.sql
+          echo "schema-after-pass-2.sql: $(wc -l < /tmp/schema-after-pass-2.sql) lines"
+
+      - name: Assert schema is identical after second pass
+        run: |
+          if ! diff -u /tmp/schema-after-pass-1.sql /tmp/schema-after-pass-2.sql; then
+            echo ""
+            echo "::error::A migration is NOT idempotent — schema differs after second run."
+            echo "::error::The diff above shows what the second pass changed. Likely fixes:"
+            echo "::error::  - CREATE TABLE -> CREATE TABLE IF NOT EXISTS"
+            echo "::error::  - ADD COLUMN -> ADD COLUMN IF NOT EXISTS"
+            echo "::error::  - CREATE INDEX -> CREATE INDEX IF NOT EXISTS"
+            echo "::error::  - CREATE POLICY -> wrap in DO block with NOT EXISTS check"
+            echo "::error::  - CREATE TYPE (enum) -> wrap in DO block with pg_type check"
+            exit 1
+          fi
+          echo "OK — schema is identical after second pass. All add-*.mjs migrations are idempotent."
+
+      - name: Upload schema snapshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-snapshots
+          path: |
+            /tmp/schema-after-pass-1.sql
+            /tmp/schema-after-pass-2.sql
+          retention-days: 7
