@@ -17,6 +17,14 @@ additive.
 
 ---
 
+## 2026-05-18 — Yanked-version R2 cleanup (T-014)
+
+- `security:` Yanked skill versions (admins set `skill_versions.yanked_at` via the admin yank flow) are now hard-deleted from R2 after a 24-hour grace window. Closes the gap where the .skill object stayed retrievable via signed URLs, CDN caches, or direct guessing of the `skills/<slug>/v<semver>.skill` key for as long as the bucket held the bytes. The 24h grace exists for download-cache propagation — deleting sooner would 404 in-flight installs of the just-yanked version.
+- `added:` Before the R2 delete, the object plus a tombstone JSON are mirrored to the `seburbina/skillhub-skills` GitHub repo under `yanked/<slug>/v<semver>/skill.zip` and `yanked/<slug>/v<semver>/tombstone.json`. The tombstone records `yanked_at`, `r2_deleted_at`, slug, semver — DMCA / takedown reviewers can audit historical content even after R2 is empty.
+- `added:` New column `skill_versions.r2_deleted_at` (nullable `timestamptz`) — set when the cleanup job purges R2. Acts as the idempotency marker so re-runs don't reprocess. NULL on every existing row; populated only by the cleanup job. Migration: `apps/api/scripts/add-r2-deleted-at.mjs` (idempotent). Run with `DATABASE_URL=… node apps/api/scripts/add-r2-deleted-at.mjs` before deploying this change.
+- `added:` New audit event `skill.r2_deleted_after_yank` (actor type `system`) recorded in `audit_events` for every cleanup. Metadata captures `slug`, `semver`, `r2_key`, `yanked_at`, `grace_period_hours`, `mirrored` (true/false), and `r2_was_missing` (true when the R2 object was already gone).
+- `changed:` The `*/5 * * * *` `mirror-to-github` cron now also runs the yanked-R2 cleanup at the end of each tick. No new cron trigger was added — Cloudflare Free caps us at 3 cron slots and prod already uses all 3. 5-min latency is fine because the 24h grace dwarfs it. No user-visible API surface change.
+
 ## 2026-05-18 — Data-retention enforcement (T-034)
 
 - `added:` Hourly data-retention job (`apps/api/src/jobs/data-retention.ts`) now DELETEs aged-out rows from `audit_events` (>365d), `invocations` (>90d), `scrub_reports` (>180d), `moderation_flags` (>365d), `claim_nonces` (>7d past `expires_at`), and `rate_limit_buckets` (>7d past `window_start`). Each table is capped at LIMIT 10_000 per run so a one-time backlog can't blow the Worker's CPU budget; a `retention.cap_hit` warning logs whenever a table maxes out. Subsequent ticks drain the rest. No API surface change — purely an internal hygiene job.
