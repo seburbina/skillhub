@@ -304,6 +304,12 @@ export const skillVersions = pgTable(
       .defaultNow(),
     deprecatedAt: timestamp("deprecated_at", { withTimezone: true }),
     yankedAt: timestamp("yanked_at", { withTimezone: true }),
+    // Set by the r2-cleanup-yanked job after the 24h grace window once the
+    // R2 object has been hard-deleted (and a copy archived to GitHub under
+    // `yanked/<slug>/v<semver>/`). NULL means the R2 object is still live
+    // (or the version was never yanked). Acts as the idempotency marker so
+    // the cron doesn't re-delete and re-mirror on every run. T-014.
+    r2DeletedAt: timestamp("r2_deleted_at", { withTimezone: true }),
     // Anti-exfiltration review queue. Non-"approved" versions are hidden
     // from public read paths; see reviewStatusEnum above.
     reviewStatus: reviewStatusEnum("review_status").notNull().default("approved"),

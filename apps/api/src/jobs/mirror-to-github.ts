@@ -18,23 +18,31 @@
  * Requires `GITHUB_MIRROR_TOKEN` — a fine-grained PAT scoped to
  * `contents:write` on `seburbina/skillhub-skills` only. Set via
  * `wrangler secret put GITHUB_MIRROR_TOKEN`.
+ *
+ * Also piggybacks the T-014 yanked-R2 cleanup at the end of every run
+ * (we're already on a 5-min cron and Cloudflare Free caps us at 3 cron
+ * slots — no room for a separate trigger).
  */
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { unzipSync } from "fflate";
 import { makeDb } from "@/db";
 import { skills, skillVersions } from "@/db/schema";
+import { cleanupYankedR2, type CleanupResult } from "@/jobs/r2-cleanup-yanked";
 import type { Bindings } from "@/types";
 
 const REPO = "seburbina/skillhub-skills";
 const BATCH_SIZE = 5;
 const GITHUB_API = "https://api.github.com";
 
-export async function mirrorToGithub(
-  env: Bindings,
-): Promise<{ mirrored: number; skipped: number; errors: number }> {
+export async function mirrorToGithub(env: Bindings): Promise<{
+  mirrored: number;
+  skipped: number;
+  errors: number;
+  cleanup: CleanupResult | null;
+}> {
   if (!env.GITHUB_MIRROR_TOKEN) {
     console.warn("[mirror-to-github] GITHUB_MIRROR_TOKEN not set; skipping");
-    return { mirrored: 0, skipped: 0, errors: 0 };
+    return { mirrored: 0, skipped: 0, errors: 0, cleanup: null };
   }
   const db = makeDb(env);
 
@@ -129,7 +137,20 @@ export async function mirrorToGithub(
     }
   }
 
-  return { mirrored, skipped, errors };
+  // T-014 — piggyback the yanked-R2 cleanup so we don't burn a cron slot.
+  // Failures here are logged but never break the mirror result.
+  let cleanup: CleanupResult | null = null;
+  try {
+    cleanup = await cleanupYankedR2(env);
+    console.log("[mirror-to-github] cleanupYankedR2 done", cleanup);
+  } catch (e) {
+    console.warn(
+      "[mirror-to-github] cleanupYankedR2 failed:",
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  return { mirrored, skipped, errors, cleanup };
 }
 
 // ---------------------------------------------------------------------------
