@@ -303,7 +303,7 @@ def _print_findings(findings: list[Finding]) -> None:
     """Render findings to stderr in the T-009 format."""
     for f in findings:
         print(
-            f"⚠️  RISKY: {f.file}:{f.line} — {f.pattern_label}",
+            f"!! RISKY: {f.file}:{f.line} — {f.pattern_label}",
             file=sys.stderr,
         )
         if f.snippet:
