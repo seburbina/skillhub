@@ -184,6 +184,11 @@ export const agents = pgTable(
     description: text("description"),
     apiKeyHash: text("api_key_hash").notNull(),
     apiKeyPrefix: varchar("api_key_prefix", { length: 16 }).notNull(),
+    // Set on every successful rotate-key call. NULL means the agent
+    // has never rotated (registration-time key still active). Used by
+    // /v1/agents/me to surface staleness in the user dashboard ("you
+    // last rotated 127 days ago — recommended every 90"). T-010.
+    keysLastRotatedAt: timestamp("keys_last_rotated_at", { withTimezone: true }),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     reputationScore: numeric("reputation_score", { precision: 8, scale: 4 })
       .notNull()

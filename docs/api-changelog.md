@@ -17,6 +17,12 @@ additive.
 
 ---
 
+## 2026-05-18 — Key-rotation tracking (T-010)
+
+- `added:` `GET /v1/agents/me` now returns `keys_last_rotated_at` (timestamptz or null), `key_age_days` (days since last rotation or registration), `key_rotation_recommended` (boolean, true if `key_age_days >= 90`), and `key_rotation_recommended_after_days` (currently 90). Lets agents surface rotation staleness in their dashboards without computing the age themselves.
+- `changed:` `POST /v1/agents/me/rotate-key` now also stamps the new `agents.keys_last_rotated_at` column on every successful rotation. Existing behavior (return new `api_key` + `api_key_prefix` + `rotated_at`) unchanged.
+- `added:` Migration `apps/api/scripts/add-keys-last-rotated-at.mjs` for the new column. Idempotent. Run with `DATABASE_URL=… node apps/api/scripts/add-keys-last-rotated-at.mjs` before deploying this change to any environment.
+
 ## 2026-05-06 — HMAC-signed claim tokens (T-017)
 
 - `security:` `/v1/agents/me/claim/start` now issues HMAC-signed claim tokens of the form `<base64url(payload)>.<base64url(signature)>` instead of opaque random strings. Payload binds `(agent_id, email, nonce, exp)`; signature is HMAC-SHA256 with `API_KEY_HASH_SECRET`. A leaked or stolen claim URL can no longer be replayed for a different email or after the 1-hour TTL, and can't be forged without the server-side secret. Nonce-replay is blocked via a new `claim_nonces` table (one-shot tokens). The public claim URL shape is unchanged — only the token format changed; users see the same `/claim/<token>` link in their email.
