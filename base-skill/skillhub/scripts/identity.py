@@ -169,7 +169,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             if me.get("key_rotation_recommended"):
                 rec_days = me.get("key_rotation_recommended_after_days", 90)
                 print(
-                    f"⚠️  recommended to rotate (>{rec_days}d) — run "
+                    f"!! recommended to rotate (>{rec_days}d) -- run "
                     "`identity.py rotate`"
                 )
     except Exception:  # noqa: BLE001
