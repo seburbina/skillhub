@@ -49,6 +49,14 @@ export interface Bindings {
   // no-ops instead of failing.
   GITHUB_MIRROR_TOKEN?: string;
 
+  /**
+   * T-034 — override the default 365-day `audit_events` retention.
+   * Honored only when set AND greater than the default (smaller values
+   * fall back to 365 so a misconfiguration can't accidentally shrink
+   * audit history). Set via `wrangler secret put`.
+   */
+  AUDIT_RETENTION_OVERRIDE_DAYS?: string;
+
   // ── Optional R2 direct-egress fallback (S3 API for browsers) ──────────
   R2_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;

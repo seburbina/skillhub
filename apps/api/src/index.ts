@@ -26,6 +26,7 @@ import { telemetry } from "@/routes/telemetry";
 import { wellKnown } from "@/routes/well-known";
 
 // Scheduled jobs
+import { enforceDataRetention } from "@/jobs/data-retention";
 import { mirrorToGithub } from "@/jobs/mirror-to-github";
 import { recomputeRankings } from "@/jobs/recompute-rankings";
 import { refreshUserStats } from "@/jobs/refresh-user-stats";
@@ -153,10 +154,27 @@ export default {
           .catch((e) => console.error("[recomputeRankings] failed", e)),
       );
     } else if (cron === "37 * * * *") {
+      // Hourly housekeeping tick. refresh-user-stats is the matview
+      // refresh; we piggyback enforceDataRetention here (T-034) instead
+      // of adding a 4th cron — the Cloudflare Free plan caps Workers at
+      // 3 cron triggers. Both run sequentially inside the same
+      // ctx.waitUntil so a slow purge doesn't prevent the matview
+      // refresh from completing.
       ctx.waitUntil(
-        refreshUserStats(env)
-          .then(() => console.log("[refreshUserStats] done"))
-          .catch((e) => console.error("[refreshUserStats] failed", e)),
+        (async () => {
+          try {
+            await refreshUserStats(env);
+            console.log("[refreshUserStats] done");
+          } catch (e) {
+            console.error("[refreshUserStats] failed", e);
+          }
+          try {
+            const r = await enforceDataRetention(env);
+            console.log("[enforceDataRetention] done", r);
+          } catch (e) {
+            console.error("[enforceDataRetention] failed", e);
+          }
+        })(),
       );
     } else if (cron === "*/5 * * * *") {
       ctx.waitUntil(
