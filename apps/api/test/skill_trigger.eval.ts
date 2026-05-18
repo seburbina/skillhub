@@ -1,25 +1,30 @@
 /**
- * Skill-trigger eval — asks Claude haiku-4 to classify 30 user prompts
- * into the skill that should handle them, then asserts the expected
- * skill is the top-1 match.
+ * Skill-trigger eval — asks Cloudflare Workers AI (Llama 3.3 70B) to
+ * classify ~30 user prompts into the skill that should handle them,
+ * then asserts the expected skill is the top-1 match.
  *
- * Run manually:  pnpm exec vitest run test/skill_trigger.eval.ts
+ * Run manually:  pnpm exec vitest run --config vitest.eval.config.ts
  * Run in CI:     weekly cron via .github/workflows/skill-trigger-eval.yml
  *
- * Requires ANTHROPIC_API_KEY in env. Skipped (not failed) if missing,
- * so this file does not affect local `pnpm test`. The default vitest
- * config also globs only `*.test.ts`, so this `.eval.ts` is excluded
- * from regular runs entirely — both belt and suspenders.
+ * Requires CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID in env (already
+ * present in repo secrets for the deploy workflow — no new secret to
+ * provision). Skipped (not failed) if missing, so this file does not
+ * affect local `pnpm test`. The default vitest config also globs only
+ * `*.test.ts`, so this `.eval.ts` is excluded from regular runs
+ * entirely — both belt and suspenders.
  *
- * Why a model-in-the-loop test? The base skill's YAML description is
- * what the harness uses to decide whether to invoke `skillhub`. A
- * description rewrite that changes wording can silently break intent
- * matching for phrases like "share this skill" or "find a skill that
- * does X". This eval is the regression gate for that class of bug.
+ * Why an open model instead of Claude? Agent Skill Depot is
+ * cross-vendor by design (works with Claude Code, Cursor, Copilot,
+ * Codex, Gemini CLI). Using Llama as the eval oracle proves the
+ * SKILL.md description is routable by a non-Claude classifier — a
+ * better proxy for cross-vendor compatibility than testing against
+ * the specific model the operator happens to be using.
  */
 import { describe, it, expect } from "vitest";
 
-const HAS_KEY = Boolean(process.env.ANTHROPIC_API_KEY);
+const HAS_KEY =
+  Boolean(process.env.CLOUDFLARE_API_TOKEN) &&
+  Boolean(process.env.CLOUDFLARE_ACCOUNT_ID);
 const describeIfKey = HAS_KEY ? describe : describe.skip;
 
 interface Case {
@@ -84,49 +89,127 @@ interface ClassifyResponse {
   reasoning: string;
 }
 
+/** Workers AI model with reliable function-calling support. */
+const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
+const SYSTEM_PROMPT =
+  "You are an expert at routing user prompts to the right skill. " +
+  "Given a user message, choose ONE skill slug from: skillhub, pdf, " +
+  "xlsx, docx, pptx, skill-creator, none. Reply only via the " +
+  "report_skill function.";
+
+const TOOL_SCHEMA = {
+  type: "function" as const,
+  function: {
+    name: "report_skill",
+    description: "Report which skill should handle this prompt.",
+    parameters: {
+      type: "object",
+      properties: {
+        predicted_skill: {
+          type: "string",
+          description:
+            "Slug of the skill (skillhub, pdf, xlsx, docx, pptx, skill-creator), or 'none' if no specialized skill applies.",
+        },
+        reasoning: { type: "string" },
+      },
+      required: ["predicted_skill", "reasoning"],
+    },
+  },
+};
+
+/**
+ * Call Workers AI's OpenAI-compatible chat endpoint. The response is
+ * wrapped in `{ success, result }`; `result` usually contains either
+ * an OpenAI-style `choices[0].message.tool_calls[0]`, or a Workers-AI
+ * native `tool_calls[0]`, or a free-text `response` field if the
+ * model refused to use the tool. We try all three shapes defensively.
+ */
 async function classify(userPrompt: string): Promise<string> {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
+  const acctId = process.env.CLOUDFLARE_ACCOUNT_ID!;
+  const token = process.env.CLOUDFLARE_API_TOKEN!;
+  const url = `https://api.cloudflare.com/client/v4/accounts/${acctId}/ai/run/${MODEL}`;
+
+  const r = await fetch(url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
+      authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 256,
-      tools: [
-        {
-          name: "report_skill",
-          description: "Report which skill should handle this prompt.",
-          input_schema: {
-            type: "object",
-            properties: {
-              predicted_skill: {
-                type: "string",
-                description:
-                  "Slug of the skill (skillhub, pdf, xlsx, docx, pptx, skill-creator), or 'none' if no specialized skill applies.",
-              },
-              reasoning: { type: "string" },
-            },
-            required: ["predicted_skill", "reasoning"],
-          },
-        },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
       ],
-      tool_choice: { type: "tool", name: "report_skill" },
-      system:
-        "You are an expert at routing user prompts to the right skill. " +
-        "Given a user message, choose ONE skill slug from: skillhub, pdf, xlsx, docx, pptx, skill-creator, none. " +
-        "Reply only via report_skill.",
-      messages: [{ role: "user", content: userPrompt }],
+      tools: [TOOL_SCHEMA],
+      tool_choice: {
+        type: "function",
+        function: { name: "report_skill" },
+      },
+      max_tokens: 256,
     }),
   });
-  if (!r.ok) throw new Error(`API ${r.status}: ${await r.text()}`);
+  if (!r.ok) throw new Error(`Workers AI ${r.status}: ${await r.text()}`);
+
   const j = (await r.json()) as {
-    content: Array<{ type: string; name?: string; input?: ClassifyResponse }>;
+    success?: boolean;
+    result?: {
+      // OpenAI-style
+      choices?: Array<{
+        message?: {
+          tool_calls?: Array<{
+            function?: { name?: string; arguments?: string | object };
+          }>;
+        };
+      }>;
+      // Workers-AI native
+      tool_calls?: Array<{ name?: string; arguments?: string | object }>;
+      // Free-text fallback
+      response?: string;
+    };
+    errors?: Array<{ message?: string }>;
   };
-  const tu = j.content.find((b) => b.type === "tool_use");
-  return tu?.input?.predicted_skill ?? "unknown";
+
+  if (j.errors?.length) {
+    throw new Error(`Workers AI: ${j.errors.map((e) => e.message).join(", ")}`);
+  }
+
+  const result = j.result ?? {};
+
+  const tryParse = (args: string | object | undefined): ClassifyResponse | null => {
+    if (!args) return null;
+    if (typeof args === "string") {
+      try {
+        return JSON.parse(args) as ClassifyResponse;
+      } catch {
+        return null;
+      }
+    }
+    if (typeof args === "object") return args as ClassifyResponse;
+    return null;
+  };
+
+  // 1. OpenAI shape.
+  const openAiArgs = result.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+  const openAi = tryParse(openAiArgs);
+  if (openAi?.predicted_skill) return openAi.predicted_skill;
+
+  // 2. Workers-AI native shape.
+  const nativeArgs = result.tool_calls?.[0]?.arguments;
+  const native = tryParse(nativeArgs);
+  if (native?.predicted_skill) return native.predicted_skill;
+
+  // 3. Free-text fallback (only if the model emitted valid JSON in
+  //    `response` instead of calling the tool — happens occasionally
+  //    with smaller models, not expected from Llama 3.3 70B).
+  if (typeof result.response === "string") {
+    const fallback = tryParse(result.response);
+    if (fallback?.predicted_skill) return fallback.predicted_skill;
+  }
+
+  throw new Error(
+    `Unexpected Workers AI response shape: ${JSON.stringify(result).slice(0, 200)}`,
+  );
 }
 
 describeIfKey("skill-trigger eval", () => {
