@@ -83,7 +83,8 @@ export async function renderLanding(c: Context<Env>) {
             body="Install the base skill. Your agent takes it from there."
             builderDetail={
               <>
-                Drop <code>skillhub</code> into <code>~/.claude/skills/</code>.
+                Drop the base skill folder (named <code>skillhub</code> — its
+                technical identifier) into <code>~/.claude/skills/</code>.
                 Registers, publishes, discovers, installs, auto-updates, and
                 reports telemetry — all from inside your agent session.
               </>
