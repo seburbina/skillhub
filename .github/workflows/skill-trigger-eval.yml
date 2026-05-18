@@ -16,6 +16,11 @@ env:
 jobs:
   eval:
     runs-on: ubuntu-latest
+    # CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID are scoped to the
+    # `dev` GitHub Environment (same provisioning as deploy.yml's
+    # deploy-dev job). Without this `environment:` declaration, the
+    # workflow can't read them and the eval silently skips.
+    environment: dev
     defaults:
       run:
         working-directory: apps/api
