@@ -23,41 +23,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      # CI has no skill-creator installed, so use the minimal stub
-      # (same as ci.yml) — package.py will delegate to it.
-      - name: Stub skill-creator
+      - name: Package skillhub.skill (3-SKILL bundle via build_bundle.py)
         run: |
-          mkdir -p $HOME/.claude/skills/skill-creator/scripts
-          touch $HOME/.claude/skills/skill-creator/scripts/__init__.py
-          cat > $HOME/.claude/skills/skill-creator/scripts/quick_validate.py <<'EOF'
-          def validate_skill(path):
-              return True, "stub validator — release build"
-          EOF
-          cat > $HOME/.claude/skills/skill-creator/scripts/package_skill.py <<'EOF'
-          import sys, zipfile
-          from pathlib import Path
-          try:
-              from scripts.quick_validate import validate_skill
-          except ImportError:
-              from quick_validate import validate_skill
-          def package_skill(skill_path, output_dir=None):
-              skill_path = Path(skill_path).resolve()
-              output_dir = Path(output_dir or ".").resolve()
-              output_dir.mkdir(parents=True, exist_ok=True)
-              out = output_dir / f"{skill_path.name}.skill"
-              with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
-                  for p in skill_path.rglob("*"):
-                      if p.is_file():
-                          zf.write(p, p.relative_to(skill_path.parent))
-              return out
-          if __name__ == "__main__":
-              package_skill(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
-          EOF
-
-      - name: Package skillhub.skill
-        run: |
+          # T-008: the release artifact bundles 3 sibling SKILLs (skillhub +
+          # skillhub-identity + skillhub-publish). build_bundle.py walks
+          # base-skill/<dir>/ for every dir with a SKILL.md and zips them
+          # side-by-side. No skill-creator stub needed at release time —
+          # the quality gate runs in the user's session when they publish
+          # someone-else's skill, not here.
           mkdir -p dist
-          python3 base-skill/skillhub/scripts/package.py base-skill/skillhub dist/skillhub.skill
+          python3 base-skill/build_bundle.py dist/skillhub.skill
           sha256sum dist/skillhub.skill > dist/skillhub.skill.sha256
 
       - name: Create GitHub release
