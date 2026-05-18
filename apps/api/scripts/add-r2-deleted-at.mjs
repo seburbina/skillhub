@@ -46,15 +46,19 @@ await step("skill_versions.r2_deleted_at: add column if not exists", async () =>
 });
 
 await step("verify — column present, count rows by state", async () => {
+  // Reference only columns we just ensured exist. The CI bootstrap
+  // ships a minimal skill_versions schema (no yanked_at), so adding
+  // yanked_at to this verify breaks the migration-idempotency CI even
+  // though real prod has it. The r2_deleted_at count is the only
+  // signal we need from this script.
   const r = await sql(`
     SELECT
-      COUNT(*)::int                              AS total,
-      COUNT(yanked_at)::int                      AS yanked,
-      COUNT(r2_deleted_at)::int                  AS r2_deleted
+      COUNT(*)::int                AS total,
+      COUNT(r2_deleted_at)::int    AS r2_deleted
     FROM skill_versions
   `);
   const row = r[0] ?? {};
-  return `${row.total} versions · ${row.yanked} yanked · ${row.r2_deleted} r2-deleted`;
+  return `${row.total} versions · ${row.r2_deleted} r2-deleted`;
 });
 
 console.log("\nDone.");
