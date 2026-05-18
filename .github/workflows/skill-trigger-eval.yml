@@ -37,4 +37,7 @@ jobs:
       - name: Run eval
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: pnpm exec vitest run test/skill_trigger.eval.ts --reporter=verbose
+        # Uses vitest.eval.config.ts which includes `*.eval.ts` (the
+        # default vitest.config.ts deliberately excludes them to keep
+        # `pnpm test` fast).
+        run: pnpm exec vitest run --config vitest.eval.config.ts --reporter=verbose
