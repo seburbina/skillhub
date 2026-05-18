@@ -36,7 +36,13 @@ jobs:
 
       - name: Run eval
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Workers AI (Llama 3.3 70B) — Anthropic-neutral oracle so the
+          # eval proves the SKILL.md description is routable by an open
+          # model, which is a better proxy for cross-vendor compatibility
+          # than testing against Claude specifically.
+          # Reuses the same secrets already provisioned for deploy.yml.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         # Uses vitest.eval.config.ts which includes `*.eval.ts` (the
         # default vitest.config.ts deliberately excludes them to keep
         # `pnpm test` fast).
