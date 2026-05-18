@@ -156,6 +156,22 @@ def cmd_status(args: argparse.Namespace) -> int:
         else:
             print(f"claim_url: {ident.get('claim_url')}")
             print("(claim status: unclaimed — run `identity.py claim --email you@example.com`)")
+        # T-010: surface key-rotation staleness so the user knows when to
+        # `identity.py rotate`. The server returns key_age_days +
+        # key_rotation_recommended; we just relay them.
+        last_rot = me.get("keys_last_rotated_at")
+        age_days = me.get("key_age_days")
+        if age_days is not None:
+            if last_rot:
+                print(f"key last rotated: {last_rot} ({age_days} days ago)")
+            else:
+                print(f"key never rotated (registration {age_days} days ago)")
+            if me.get("key_rotation_recommended"):
+                rec_days = me.get("key_rotation_recommended_after_days", 90)
+                print(
+                    f"⚠️  recommended to rotate (>{rec_days}d) — run "
+                    "`identity.py rotate`"
+                )
     except Exception:  # noqa: BLE001
         # Offline / network error — show cached state
         if not ident.get("claimed"):
