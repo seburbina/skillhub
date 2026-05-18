@@ -62,7 +62,7 @@ except ImportError:
 
 INSTALLED_ROOT = Path.home() / ".claude" / "skills" / "skillhub-installed"
 INSTALLED_INDEX = Path.home() / ".claude" / "skills" / "skillhub" / ".installed.json"
-VERSION = "0.0.6"
+VERSION = "0.0.8"
 
 # T-009 risk-symbol patterns. These are intentionally broad — false positives
 # are fine (and expected) because they only trigger a confirmation prompt, not
