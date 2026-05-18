@@ -141,6 +141,115 @@ WHERE window_start < now() - INTERVAL '7 days';
 ```
 Runs as part of an existing cron in Phase 2.
 
+## Enforcement — `enforceDataRetention` job (T-034)
+
+`apps/api/src/jobs/data-retention.ts` actually executes the retention
+windows declared above. It runs **hourly** on the `37 * * * *` cron,
+piggybacked inside the existing `refresh-user-stats` scheduled handler
+(Cloudflare Free plan caps the worker at 3 cron triggers, so a 4th cron
+is not an option). See `apps/api/src/index.ts`.
+
+### Per-table windows (defaults)
+
+| Table | Window | Filter column | Notes |
+|---|---|---|---|
+| `audit_events` | 365 days | `created_at` | Override via `AUDIT_RETENTION_OVERRIDE_DAYS` (operator extends only — see below) |
+| `invocations` | 90 days | `created_at` | Raw telemetry; rankings recompute from aggregates kept in `skill_stats_daily` |
+| `scrub_reports` | 180 days | `created_at` | Privacy-relevant; kept long enough for compliance disputes |
+| `moderation_flags` | 365 days | `created_at` | Need history for repeat-reporter detection |
+| `claim_nonces` | 7 days past `expires_at` | `expires_at` | One-shot; useful for replay-attack investigation, then gone |
+| `rate_limit_buckets` | 7 days past `window_start` | `window_start` | No value after window closes |
+
+These defaults are conservative on the "keep too long" side rather than
+the "delete too aggressively" side. They are intentionally tighter than
+some windows in the table above (e.g. invocations 90d here vs the 2-year
+intent in the table) because the job's scope is **bounded event tables**
+that grow linearly with traffic. Long-form intent windows in the table
+above remain the policy target; the job's defaults are floor values for
+v1 that are guaranteed to keep tables operationally sized. We will tune
+upward as we get production data on growth rates.
+
+### Per-run safety cap
+
+Each table's DELETE is capped at `LIMIT 10_000` per run via a subselect:
+
+```sql
+DELETE FROM <table>
+WHERE id IN (
+  SELECT id FROM <table>
+  WHERE <ts-column> < NOW() - INTERVAL '<n> days'
+  LIMIT 10000
+)
+RETURNING 1;
+```
+
+The cap prevents a one-time backlog (think: never-deleted year of
+`invocations`) from blowing the Worker's 30-second CPU budget on a
+single cron tick. Subsequent ticks drain the rest. When the cap is hit,
+a structured `retention.cap_hit` warning is logged with the table name
+so the operator can tell that the backlog is still draining.
+
+### Auditability
+
+Every run writes ONE summary row to `audit_events`:
+
+```jsonc
+{
+  "actor_type": "system",
+  "action": "retention.purge",
+  "metadata": { "deleted": { "audit_events": 12, "invocations": 47, ... } }
+}
+```
+
+The summary row is itself subject to retention — eventually old purge
+records also get purged. This is by design: the summary is a heartbeat,
+not a forensic record.
+
+### Conservative schema-drift handling
+
+If a table doesn't exist (mid-migration, a stale environment, etc.) the
+DELETE throws. The job catches per-table failures, logs
+`retention.rule_failed`, records `deleted[<table>] = 0`, and continues
+with the rest. One missing table can never block enforcement on the
+other five.
+
+### Operator override — `AUDIT_RETENTION_OVERRIDE_DAYS`
+
+For compliance disputes, regulatory subpoenas, or SOC 2 Type II
+observation windows, an operator can extend the `audit_events` window:
+
+```bash
+wrangler secret put AUDIT_RETENTION_OVERRIDE_DAYS
+# enter: 2555    # ~7 years (SOC 2 Type II)
+```
+
+The override is **honored only when larger** than the 365-day default.
+A value smaller than the default (including a typo'd `30`) falls back
+to 365 — this prevents accidental misconfiguration from erasing audit
+history. To shrink the audit window you must edit the constant in
+`apps/api/src/jobs/data-retention.ts` and redeploy.
+
+To override the other tables' windows in v1: edit the
+`DEFAULT_RETENTION_DAYS` constants in
+`apps/api/src/jobs/data-retention.ts` and redeploy. A more dynamic
+config story (DB-backed `retention_config` table or per-tenant
+overrides) is a Phase 2 item.
+
+### What this job does NOT delete
+
+The job intentionally does not touch:
+- `agents`, `users`, `skills`, `skill_versions` — core records, not events
+- `subscriptions`, `entitlements` — billing data, governed by tax law
+- `user_stats`, `skill_stats_daily`, `leaderboard_snapshots` — aggregate
+  rollups that don't grow unboundedly
+- `tenant_skill_allowlist`, `ranking_weights`, `contributor_score_weights`
+  — config, not events
+
+GDPR Art. 17 hard-delete + tenant termination cascades (described in the
+sections above) remain separate, on-demand workflows. They are not
+folded into this hourly job because they require user/tenant context
+the cron doesn't have.
+
 ## Backup retention
 
 - **Neon point-in-time recovery:** 7 days (free tier), 14-30 days

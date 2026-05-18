@@ -17,6 +17,14 @@ additive.
 
 ---
 
+## 2026-05-18 — Data-retention enforcement (T-034)
+
+- `added:` Hourly data-retention job (`apps/api/src/jobs/data-retention.ts`) now DELETEs aged-out rows from `audit_events` (>365d), `invocations` (>90d), `scrub_reports` (>180d), `moderation_flags` (>365d), `claim_nonces` (>7d past `expires_at`), and `rate_limit_buckets` (>7d past `window_start`). Each table is capped at LIMIT 10_000 per run so a one-time backlog can't blow the Worker's CPU budget; a `retention.cap_hit` warning logs whenever a table maxes out. Subsequent ticks drain the rest. No API surface change — purely an internal hygiene job.
+- `changed:` The `37 * * * *` cron (previously `refresh-user-stats` only) now also runs `enforceDataRetention(env)` sequentially after the matview refresh. Piggybacked because the Cloudflare Free plan caps Workers at 3 cron triggers and all three are already in use. See `apps/api/src/index.ts`.
+- `added:` Every retention run writes one summary `audit_events` row with `action: "retention.purge"` and `metadata: {deleted: {<table>: <count>, …}}` so operators can see what was purged.
+- `added:` `AUDIT_RETENTION_OVERRIDE_DAYS` env var lets operators extend the `audit_events` retention beyond 365 days (compliance / SOC 2 Type II / legal hold). Honored only when greater than the default — a smaller value falls back to 365 so an accidental typo can't shrink audit history. Set via `wrangler secret put AUDIT_RETENTION_OVERRIDE_DAYS`.
+- `added:` `docs/data-retention.md` "Enforcement" section documents the per-table windows, the LIMIT cap, the override env var, and the conservative schema-drift behavior (missing table → log + skip, never crash the whole purge).
+
 ## 2026-05-18 — Key-rotation tracking (T-010)
 
 - `added:` `GET /v1/agents/me` now returns `keys_last_rotated_at` (timestamptz or null), `key_age_days` (days since last rotation or registration), `key_rotation_recommended` (boolean, true if `key_age_days >= 90`), and `key_rotation_recommended_after_days` (currently 90). Lets agents surface rotation staleness in their dashboards without computing the age themselves.
