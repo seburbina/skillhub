@@ -110,22 +110,31 @@ jobs:
       - name: Package the base skill
         run: |
           mkdir -p dist
-          python3 base-skill/skillhub/scripts/package.py base-skill/skillhub dist/skillhub.skill
+          # T-008: the bundle now contains 3 sibling SKILLs (skillhub,
+          # skillhub-identity, skillhub-publish). build_bundle.py zips every
+          # base-skill/<dir>/ that has a SKILL.md into one .skill. Users still
+          # install via a single `curl + unzip` and get the 3 directories
+          # side-by-side under ~/.claude/skills/.
+          python3 base-skill/build_bundle.py dist/skillhub.skill
           test -f dist/skillhub.skill
           python3 -c "
           import os, zipfile
           z = zipfile.ZipFile('dist/skillhub.skill')
           names = z.namelist()
-          assert any(n.endswith('SKILL.md') for n in names), names
-          assert any(n.endswith('LICENSE.txt') for n in names), names
-          assert any(n.endswith('scripts/sanitize.py') for n in names), names
-          assert any(n.endswith('references/scrubbing.md') for n in names), names
-          # Bundle-size guard — base skill is ~50 KB at v0.0.5; cap at 100 KB
-          # to catch accidental bloat (e.g. someone committing a binary,
-          # references doc growth without lazy-loading, etc.). Bump deliberately
-          # if the size grows for a real reason.
+          # Each of the 3 SKILLs must have its own SKILL.md + LICENSE.txt
+          # (or share-by-reference — only skillhub ships LICENSE.txt; the
+          # companions reference it in their bodies).
+          assert any(n == 'skillhub/SKILL.md' for n in names), names
+          assert any(n == 'skillhub-identity/SKILL.md' for n in names), names
+          assert any(n == 'skillhub-publish/SKILL.md' for n in names), names
+          assert any(n == 'skillhub/LICENSE.txt' for n in names), names
+          assert any(n == 'skillhub/scripts/sanitize.py' for n in names), names
+          assert any(n == 'skillhub/references/scrubbing.md' for n in names), names
+          # Bundle-size guard — base skill is ~54 KB after the T-008 split;
+          # cap at 120 KB to give headroom for the 3 SKILL.md files plus
+          # accidental-bloat detection on top.
           size = os.path.getsize('dist/skillhub.skill')
-          MAX_BYTES = 100 * 1024
+          MAX_BYTES = 120 * 1024
           assert size <= MAX_BYTES, f'.skill bundle is {size} bytes, exceeds {MAX_BYTES} cap. If intentional, bump the cap with a comment in ci.yml.'
           print(f'package ok: {len(names)} files, {size} bytes, sha256:', __import__('hashlib').sha256(open('dist/skillhub.skill', 'rb').read()).hexdigest()[:16])
           "
